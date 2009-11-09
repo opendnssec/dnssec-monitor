@@ -33,20 +33,94 @@ require 'syslog'
 include Syslog::Constants
 require 'options_parser.rb'
 
+# @TODO@ Add functionality to load a list of names, either from the command-line,
+# or a file, or a zone file.
+# @TODO@ We need to be able to read OpenDNSSEC config files.
+# @TODO@ Should we somehow share the auditor and monitor parse.rb, config.rb and preparser.rb?
+# @TODO@ Check the RRSIGs for the list of names
+# @TODO@ Check the parent DS record
+# @TODO@ Check the DS records for the list of names
+# @TODO@ Get tolerances from OpenDNSSEC files, if available (and values not specified on command line)
+# @TODO@ Validate from a signed root
+
+# @TODO@ Should we try to require 'kasp_auditor.rb' here? If it not available, then
+# we can note that and not attempt to read from the KASP config files
+
 module DnssecMonitor
   class DomainLoader
-    # Load the list of domains in the zone (or a zonefile)
+    # @TODO@ Load the list of domains in the zone (or a zonefile)
   end
   class Controller
     # Control a set of ZoneMonitors to do the right thing
     def initialize(options)
-      @options = options
-      @ipv6ok = support_ipv6?
       @ret_val = 999
+      @options = options
+      if (!options.zone)
+        log(LOG_ERR, "No zone name specified")
+        exit(1)
+      end
+      load_names
+      @ipv6ok = support_ipv6?
       if (!@ipv6ok)
         log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
       end
     end
+
+    def load_names
+      @name_list = nil
+      # Now load the namefile or zonefile, if appropriate
+      if (@options.name_list)
+        # Do nothing - this overrides files
+        @name_list = @options.name_list
+      elsif (@options.zonefile)
+        # Load the zonefile into the name_list
+        if (!File.exist?@options.zonefile)
+          log(LOG_ERR, "Zone file #{@options.zonefile} does not exist")
+        else
+          @name_list = {}
+          zone_reader = Dnsruby::ZoneReader.new(@options.zone)
+          line_num = 0
+          IO.foreach(@options.zonefile) {|line|
+            line_num += 1
+            begin
+              rr = zone_reader.process(line)
+              @name_list[rr.name] = rr.type
+            rescue Exception => e
+              log(LOG_ERR, "Can't understand line #{line_num} of #{@options.zonefile} : #{line}")
+            end
+          }
+        end
+      elsif (@options.namefile)
+        # Load the namefile into the name_list
+        if (!File.exist?@options.namefile)
+          log(LOG_ERR, "Name file #{@options.namefile} does not exist")
+        else
+          @name_list = {}
+          line_num = 0
+          IO.foreach(@options.namefile) {|line|
+            line_num += 1
+            split = line.split
+            name = split[0]
+            begin
+              name = Dnsruby::Name.create(name)
+              @name_list[name] = []
+              (split.length-1).times {|i|
+                @name_list[name].push(Types.new(split[i+1]))
+              }
+            rescue Exception => e
+              log(LOG_ERR, "Can't understand line #{line_num} of #{@options.namefile} : #{line}")
+            end
+          }
+        end
+      else
+        # @TODO@ Load the zone names by walking the zone?
+        # Should this be an explicit option?
+        #      if (nsec_signed)
+        #        @name_list = walk_zone
+        #      end
+      end
+    end
+
     def support_ipv6?
       udp = UDPSocket.new(Socket::AF_INET6)
       dns = DNS.new
@@ -85,9 +159,9 @@ module DnssecMonitor
         nameservers = get_nameservers(@options.zone)
       end
       threads = []
-      nameservers.each {|nameserver| 
+      nameservers.each {|nameserver|
         thread = Thread.new() {
-          monitor = ZoneMonitor.new(@options, nameserver, self)
+          monitor = ZoneMonitor.new(@options, nameserver, self, @name_list)
           monitor.check_zone
         }
         threads.push(thread)
@@ -108,7 +182,7 @@ module DnssecMonitor
       # Get the nameservers for the zone
       recursor = Recursor.new()
       begin
-      ret = recursor.query(zone, "NS")
+        ret = recursor.query(zone, "NS")
       rescue Exception => e
         log(LOG_ERR, "Can't find authoritative servers : #{e}")
         exit 3
@@ -138,8 +212,9 @@ module DnssecMonitor
     end
   end
   class ZoneMonitor
-    def initialize(options, nameserver, logger)
+    def initialize(options, nameserver, logger, name_list)
       @zone = options.zone
+      @name_list = name_list
       @options = options
       @nameserver = nameserver
       @logger = logger
@@ -159,14 +234,18 @@ module DnssecMonitor
         check_apex
         check_nxdomain(Types.NS, @options.wildcard)
         check_parent_ds
-        #      if (nsec_signed and !have_some_domains_in_zone)
-        #        walk_zone
-        #      end
-        #      if (have_some_domains_in_zone)
-        #        domains.each {|domain|
-        #          check_domain(domain)
-        #        }
-        #      end
+        if (@name_list)
+          @name_list.each {|domain, types|
+            if (types.length == 0)
+              # Check something here...
+              check_domain(domain)
+            else
+              types.each {|type|
+                check_domain(domain, type)
+              }
+            end
+          }
+        end
         #      return error
         @logger.log(LOG_INFO, "Finished checking on #{@nameserver}")
       rescue ResolvTimeout => e
@@ -360,9 +439,46 @@ module DnssecMonitor
       # @TODO@ Check the parent DS - either in the normal DNS or the ISC DLV registry
     end
 
-    def check_domain
-      check_child_ds # @TODO@
-      check_sigs # @TODO@
+    def check_child_ds # @TODO@
+
+    end
+
+    def check_domain(name, type = nil)
+      # Check RRSIG if type is nil
+      type = Types::RRSIG if !type
+      check_child_ds 
+      check_sigs(name, type)
+    end
+
+    # Check the RRSIG expiry, etc. for a specific domain
+    def check_sigs(name, type)
+      @logger.log(LOG_INFO, "Checking #{name}, #{type}")
+      ret = query(name, Types.RRSIG)
+      if (ret.rcode == RCode::NXDOMAIN)
+        @logger.log(LOG_ERR, "No records found at #{name}")
+        return
+      end
+      warn = 10 # @TODO@
+      critical = 10 # @TODO@
+      ret.answer.rrsets(Types.RRSIG).each {|sigs|
+        sigs.each {|sig|
+          days = (sig.expiration - Time.now.to_i) / (60 * 60 * 24)
+          if (days < 0)
+            @logger.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} has expired")
+          end
+          if (critical && (days <= critical))
+            @logger.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (critical is #{critical})")
+          end
+          if (warn && (days <= warn))
+            @logger.log(LOG_WARNING, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (warn is #{warn})")
+          end
+        }
+      }
+    end
+
+    def check_expire_zsk(sigs)
+      check_expire_with_keys(sigs, @zsks, @options.zsk_expire_critical,
+        @options.zsk_expire_warn)
     end
   end
   class Daemon

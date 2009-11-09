@@ -62,6 +62,7 @@ module DnssecMonitor
       options.zsk_expire_warn  = 3
       options.wildcard     = 0
       options.nagios_verbosity    = 0
+      options.name_list = nil
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -105,6 +106,28 @@ module DnssecMonitor
           "NXDomain checks will be disabled if wildcards are enabled") do |on|
           options.wilcard = on
         end
+
+        opts.on("--names name1,name2,name3", Array,
+          "List of names to check in the zone", 
+          "Note that there must be no whitespace between the names",
+          "UNSUPPORTED") do |list|
+          options.name_list = {}
+          list.each {|n|
+            options.name_list[Dnsruby::Name.create(n)] = []
+          }
+        end
+
+        opts.on("--namefile file", "Name of file containing list of names (and " +
+            "optional types) to check in the zone", "UNSUPPORTED") do |f|
+          options.namefile = f
+        end
+
+        opts.on("--zonefile file", "Name of zone file to load list of names to "+
+            "check against zone", "UNSUPPORTED") do |zf|
+          options.zonefile= zf
+        end
+
+
 
         if (support_nagios) # Running nagios_dnssec.rb
           opts.on("-v", "--verbose [n]", "Set the NAGIOS verbosity level to n",
