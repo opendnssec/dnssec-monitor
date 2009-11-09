@@ -1,0 +1,80 @@
+INTRODUCTION
+------------
+
+This project contains tools to monitor a DNSSEC-signed zone,
+including a NAGIOS plug-in.
+
+INSTALLATION
+------------
+
+The tools can be run from the lib folder, or the contents of 
+the lib folder can be copied to the location of your choice.
+
+It may be necessary to :
+
+  chmod +x dnssec_monitor.rb
+
+RUNNING
+-------
+
+From the directory containing the code (e.g. lib), run :
+
+  ./dnssec_monitor.rb -z <zone> [options]
+
+where zone is the zone the be monitored. Additional options may be
+viewed by running : 
+
+  ./dnssec_monitor.rb -? 
+
+(or -h, or --help)
+
+Additional options include :
+
+    -n <ns1>[,<ns2>,<ns3>,...]       Comma-separated list of nameservers
+                                     to monitor for the zone
+        --nameservers                Defaults to the nameservers listed
+                                     in the public DNS
+        --kskwarn [n]                Warn if KSK expiry is within n days
+        --kskcritical [n]            Error if KSK expiry is within n days
+        --zskwarn [n]                Warn if ZSK expiry is within n days
+        --zskcritical [n]            Error if ZSK expiry is within n days
+    -w, --wilcard                    NXDomain checks will be disabled if 
+                                     wildcards are enabled
+    -d, --daemonize                  Run the dnssec monitor as a daemon
+                                     Currently unsupported
+    -l, --log [FACILITY]             Specify the syslog facility to print 
+                                     results
+
+NAGIOS PLUG-IN
+--------------
+
+The nagios plug-in is provided in the same lib folder. It uses the same
+options as dnssec_monitor, with an additional NAGIOS-specific option :
+
+   -v, --verbose [n]                 Set the NAGIOS verbosity to n
+
+
+FUNCTIONALITY 
+-------------
+
+Zone Apex Checks
+   The following records are checked at the zone apex : DNSKEY, SOA and NS.
+   For each of these RRSets, the RRSIGs are verified using one of the DNSKEYs at the apex.
+   For these RRSIGs, the signature expiration is checked to ensure it is a certain amount from the current time.
+   For these RRSIGs, the signature inception is checked to ensure it is a certain amount before the current time.
+   For these RRSIGs, the signature lifetime (expiration - inception) is checked for a minimum level.
+   FUTURE VERSION : Check that at least one DNSKEY matches DS in parent zone (or in the ISC DLV registry)
+
+In a future version, the inception/expiration tolerances may be obtained from the OpenDNSSEC configuration files, if available. Otherwise, command line options or defaults are used.
+
+In a future version, it will be possible to specify a list of names (or a zone file) for which the RRSIGs should be checked as per the zone apex RRSIG checks.
+
+In a future version, it will be possible to check the DS records against the published children zones.
+
+In a future version, it will be possible to validate the zone from the signed root (giving detailed diagnostics in case of failure).
+
+AUTHOR
+------
+
+alex@nominet.org.uk
+ 
