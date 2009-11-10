@@ -60,6 +60,8 @@ module DnssecMonitor
       options.ksk_expire_warn  = 14
       options.zsk_expire_critical = 1
       options.zsk_expire_warn  = 3
+      options.domain_expire_critical = 1
+      options.domain_expire_warn  = 3
       options.wildcard     = 0
       options.nagios_verbosity    = 0
       options.name_list = nil
@@ -102,6 +104,18 @@ module DnssecMonitor
           options.zsk_expire_critical = n.to_i
         end
 
+        opts.on("--dwarn [n]", "Warn if a domain RRSIG expiry is within n days",
+          "Defaults to #{options.domain_expire_warn}",
+        "Only useful when a list of domains to check is supplied") do |n|
+          options.domain_expire_warn = n.to_i
+        end
+
+        opts.on("--dcritical [n]", "Error if a domain RRSIG expiry is within n days",
+          "Defaults to #{options.domain_expire_critical}",
+        "Only useful when a list of domains to check is supplied") do |n|
+          options.domain_expire_critical = n.to_i
+        end
+
         opts.on("-w", "--wilcard",
           "NXDomain checks will be disabled if wildcards are enabled") do |on|
           options.wilcard = on
@@ -109,21 +123,20 @@ module DnssecMonitor
 
         opts.on("--names name1,name2,name3", Array,
           "List of names to check in the zone", 
-          "Note that there must be no whitespace between the names",
-          "UNSUPPORTED") do |list|
+          "Note that there must be no whitespace between the names") do |list|
           options.name_list = {}
           list.each {|n|
             options.name_list[Dnsruby::Name.create(n)] = []
           }
         end
 
-        opts.on("--namefile file", "Name of file containing list of names (and " +
-            "optional types) to check in the zone", "UNSUPPORTED") do |f|
+        opts.on("--namefile file", "Name of file containing list of names (and ",
+            "optional types) to check in the zone") do |f|
           options.namefile = f
         end
 
-        opts.on("--zonefile file", "Name of zone file to load list of names to "+
-            "check against zone", "UNSUPPORTED") do |zf|
+        opts.on("--zonefile file", "Name of zone file to load list of names to ",
+            "check against zone") do |zf|
           options.zonefile= zf
         end
 
@@ -131,7 +144,7 @@ module DnssecMonitor
 
         if (support_nagios) # Running nagios_dnssec.rb
           opts.on("-v", "--verbose [n]", "Set the NAGIOS verbosity level to n",
-            "Defaults to 0 (single line, minimal output, if -v not used, or",
+            "Defaults to 0 (single line, minimal output, if -v not used",
             "defaults to 3 (Detailed output) if -v used with no number") do |n|
             options.nagios_verbosity = (n || 3).to_i
           end

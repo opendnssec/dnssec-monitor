@@ -33,13 +33,9 @@ require 'syslog'
 include Syslog::Constants
 require 'options_parser.rb'
 
-# @TODO@ Add functionality to load a list of names, either from the command-line,
-# or a file, or a zone file.
 # @TODO@ We need to be able to read OpenDNSSEC config files.
-# @TODO@ Should we somehow share the auditor and monitor parse.rb, config.rb and preparser.rb?
-# @TODO@ Check the RRSIGs for the list of names
+# @TODO@ Should we somehow share the auditor and monitor parse.rb and config.rb?
 # @TODO@ Check the parent DS record
-# @TODO@ Check the DS records for the list of names
 # @TODO@ Get tolerances from OpenDNSSEC files, if available (and values not specified on command line)
 # @TODO@ Validate from a signed root
 
@@ -178,28 +174,30 @@ module DnssecMonitor
     end
 
     def get_nameservers(zone)
-      nameservers = []
       # Get the nameservers for the zone
+      msg = nil
       recursor = Recursor.new()
       begin
-        ret = recursor.query(zone, "NS")
+        msg = recursor.query(zone, "NS")
       rescue Exception => e
-        log(LOG_ERR, "Can't find authoritative servers : #{e}")
-        exit 3
+        log(LOG_ERR, "Can't find authoritative servers for #{zone} : #{e}")
+        exit(3)
       end
-      ret.answer.rrsets(Types.NS)[0].rrs.each {|rr| nameservers.push(rr.nsdname)}
+
+      ret = recursor.query(zone, Types::SOA)
+      ret.each_resource() { |rr|
+        if ((rr.type == Types::SOA) && (rr.name.to_s != zone.to_s ))
+          log(LOG_ERR, "SOA name reported from #{recursor} is #{rr.name}, but should be #{zone}")
+        end
+      }
+      nameservers = []
+      msg.answer.rrsets(Types::NS)[0].rrs.each {|rr| nameservers.push(rr.nsdname)}
       # Then build up the list of addresses for them
       ns_addrs = []
-      types = [Types.A]
-      types.push(Types.AAAA) if @ipv6ok
+      types = [Types::A]
+      types.push(Types::AAAA) if @ipv6ok
       types.each {|type|
         nameservers.each {|ns|
-          ret = recursor.query(zone, Types::SOA)
-          ret.each_resource() { |rr|
-            if ((rr.type == Types::SOA) && (rr.name.to_s != zone.to_s ))
-              log(LOG_ERR, "SOA name reported from #{ns} is #{rr.name}, but should be #{zone}")
-            end
-          }
           ret = recursor.query(ns, type)
           ret.answer.rrsets(type).each {|rrset|
             rrset.rrs.each {|rr|
@@ -210,15 +208,16 @@ module DnssecMonitor
       }
       return ns_addrs
     end
+
   end
   class ZoneMonitor
-    def initialize(options, nameserver, logger, name_list)
+    def initialize(options, nameserver, controller, name_list)
       @zone = options.zone
       @name_list = name_list
       @options = options
       @nameserver = nameserver
-      @logger = logger
-      @logger.log(LOG_INFO, "Making resolver for : #{nameserver}")
+      @controller = controller
+      @controller.log(LOG_INFO, "Making resolver for : #{nameserver}")
       @res = Resolver.new(nameserver.to_s)
       @verifier = SingleVerifier.new(SingleVerifier::VerifierType::ROOT)
     end
@@ -228,7 +227,7 @@ module DnssecMonitor
       # Run-once monitor for a single zone - report any errors to syslog, and
       # return a code indicating the most severe error we encountered.
       error = 0
-      @logger.log(LOG_INFO, "Checking #{@zone} zone on #{@nameserver} nameserver")
+      @controller.log(LOG_INFO, "Checking #{@zone} zone on #{@nameserver} nameserver")
       begin
         fetch_zone_keys
         check_apex
@@ -247,21 +246,29 @@ module DnssecMonitor
           }
         end
         #      return error
-        @logger.log(LOG_INFO, "Finished checking on #{@nameserver}")
+        @controller.log(LOG_INFO, "Finished checking on #{@nameserver}")
       rescue ResolvTimeout => e
-        @logger.log(LOG_WARNING, "Failed to check #{@nameserver} - no response")
+        @controller.log(LOG_WARNING, "Failed to check #{@nameserver} - no response")
       rescue OtherResolvError => e
-        @logger.log(LOG_WARNING, "Failed to check #{@nameserver} : #{e}")
+        @controller.log(LOG_WARNING, "Failed to check #{@nameserver} : #{e}")
       end
     end
 
-    def query(name, type)
+    def query(name, type, res = @res)
+      ret = query_ignore_nxdomain(name, type, res)
+      if (ret.rcode == RCode::NXDomain)
+        raise Dnsruby::ResolvError::NXDomain.new
+      end
+      return ret
+    end
+
+    def query_ignore_nxdomain(name, type, res = @res)
       if (!@sender)
         @sender = PacketSender.new
       end
       msg = Message.new(name, type)
       @sender.prepare_for_dnssec(msg)
-      ret, error = @res.send_plain_message(msg)
+      ret, error = res.send_plain_message(msg)
       if (error && !(Dnsruby::NXDomain === error))
         raise error
       end
@@ -280,20 +287,20 @@ module DnssecMonitor
           if  ((rr.protocol == 3) &&  (rr.zone_key?))
             @verifier.add_trusted_key(RRSet.new(rr))
             if (rr.sep_key?)
-              @logger.log(LOG_INFO,"Adding ksk : #{rr.key_tag}")
+              @controller.log(LOG_INFO,"Adding ksk : #{rr.key_tag}")
               @ksks.push(rr)
             else
-              @logger.log(LOG_INFO,"Adding zsk : #{rr.key_tag}")
+              @controller.log(LOG_INFO,"Adding zsk : #{rr.key_tag}")
               @zsks.push(rr)
             end
           end
         }
       }
       if (@ksks.length == 0)
-        @logger.log(LOG_ERR, "No KSKs found in the zone")
+        @controller.log(LOG_ERR, "No KSKs found in the zone")
       end
       if (@zsks.length == 0)
-        @logger.log(LOG_ERR, "No ZSKs found in the zone")
+        @controller.log(LOG_ERR, "No ZSKs found in the zone")
       end
       ret.answer.rrsets(Types.DNSKEY).each {|rrset|
         # Verify with both ZSKs and KSKs
@@ -308,15 +315,15 @@ module DnssecMonitor
         return
       end
       if (rrset.sigs.length == 0)
-        @logger.log(LOG_ERR, "No RRSIGS found in #{rrset.name}, #{rrset.type} RRSet")
+        @controller.log(LOG_ERR, "No RRSIGS found in #{rrset.name}, #{rrset.type} RRSet")
         return
       end
       # @TODO@ There should be no RRSIG for glue records or unsigned delegations
       begin
         @verifier.verify_rrset(rrset, keys)
-        @logger.log(LOG_INFO, "#{rrset.name}, #{rrset.type} verified OK")
+        @controller.log(LOG_INFO, "#{rrset.name}, #{rrset.type} verified OK")
       rescue VerifyError => e
-        @logger.log(LOG_ERR, "#{rrset.name}, #{rrset.type} verification failed : #{e}, #{rrset}")
+        @controller.log(LOG_ERR, "#{rrset.name}, #{rrset.type} verification failed : #{e}, #{rrset}")
       end
 
     end
@@ -343,7 +350,7 @@ module DnssecMonitor
           verify_rrset(rrset, @zsks)
         }
         if (answer.rrsets(type).length == 0)
-          @logger.log(LOG_ERR, "No #{type} record found for zone")
+          @controller.log(LOG_ERR, "No #{type} record found for zone")
         end
       }
 
@@ -380,13 +387,13 @@ module DnssecMonitor
               key_type = "ZSK"
             end
             if (days < 0)
-              @logger.log(LOG_ERR, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} has expired")
+              @controller.log(LOG_ERR, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} has expired")
             end
             if (critical && (days <= critical))
-              @logger.log(LOG_ERR, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
+              @controller.log(LOG_ERR, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
             end
             if (warn && (days <= warn))
-              @logger.log(LOG_WARNING, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
+              @controller.log(LOG_WARNING, "#{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
             end
           end
         }
@@ -399,12 +406,12 @@ module DnssecMonitor
 
       zone = nil
 
-      @logger.log(LOG_INFO, "Checking non-existing domain for #{name}, #{type}\n")
+      @controller.log(LOG_INFO, "Checking non-existing domain for #{name}, #{type}")
       # fetch qname/IN/qtype
-      packet = query(name, type)
+      packet = query_ignore_nxdomain(name, type)
       if (!wildcard)
         if (packet.rcode != RCode.NXDomain)
-          @logger.log(LOG_ERR, "#{name}/IN/#{type} should not exist")
+          @controller.log(LOG_ERR, "#{name}/IN/#{type} should not exist")
           return
         end
       end
@@ -413,19 +420,19 @@ module DnssecMonitor
       zone = packet.authority.rrsets(Types.SOA)[0].name
 
       if (!zone)
-        @logger.log(LOG_ERR, "no SOA found NXDOMAIN authority section")
+        @controller.log(LOG_ERR, "no SOA found NXDOMAIN authority section")
       end
 
 
       if ((packet.authority.rrsets(Types.NSEC).length == 0) &&
             (packet.authority.rrsets(Types.NSEC3).length == 0))
-        @logger.log(LOG_ERR, "no NSEC/NSEC3 found in authority section")
+        @controller.log(LOG_ERR, "no NSEC/NSEC3 found in authority section")
       else
         if (((packet.authority.rrsets(Types.NSEC)[0] &&
                   packet.authority.rrsets(Types.NSEC)[0].sigs.length == 0)) &&
               (packet.authority.rrsets(Types.NSEC3)[0] &&
                 (packet.authority.rrsets(Types.NSEC3)[0].sigs.length == 0)))
-          @logger.log(LOG_ERR, "no NSEC/NSEC3 RRSIG found")
+          @controller.log(LOG_ERR, "no NSEC/NSEC3 RRSIG found")
         end
       end
 
@@ -439,38 +446,101 @@ module DnssecMonitor
       # @TODO@ Check the parent DS - either in the normal DNS or the ISC DLV registry
     end
 
-    def check_child_ds # @TODO@
+    def get_nameservers_for_child(zone)
+      # Get the nameservers for the zone
+      msg = nil
+      begin
+        msg = @res.query(zone, "NS")
+      rescue Exception => e
+        log(LOG_ERR, "Can't find authoritative servers for #{zone} : #{e}")
+        return false
+      end
 
+      nameservers = []
+      msg.authority.rrsets(Types::NS)[0].rrs.each {|rr| nameservers.push(rr.nsdname)}
+      # Then build up the list of addresses for them
+      ns_addrs = []
+      types = [Types::A]
+      types.push(Types::AAAA) if @ipv6ok
+      types.each {|type|
+        nameservers.each {|ns|
+          msg.additional.rrsets(type).each {|rrset|
+            rrset.rrs.each {|rr|
+              ns_addrs.push(rr.address)
+            }
+          }
+        }
+      }
+      return ns_addrs
+    end
+
+    def check_child_ds(name)
+      ret = query(name, Types::DS)
+      if (ret.rcode == RCode::NXDOMAIN)
+        @controller.log(LOG_ERR, "No records found at #{name}")
+        return false
+      end
+      if (ret.answer.rrsets(Types::DS).length > 0)
+        ns_addrs = get_nameservers_for_child(name)
+        return if !ns_addrs
+        ns_addr_strs = ns_addrs.map{|n| n.to_s}
+        # Now get the DNSKEYs for the child zone
+        resolver = Dnsruby::Resolver.new({:nameservers => ns_addr_strs})
+        key_msg = query(name, Types::DNSKEY, resolver)
+        key_rrsets = key_msg.answer.rrsets(Types::DNSKEY)
+        if (key_rrsets.length == 0)
+          @controller.log(LOG_WARNING, "Can't validate DS records for #{name}, as no DNSKEY records are present in the #{name} zone")
+          return true
+        end
+        key_rrset = key_rrsets[0]
+        ret.answer.rrsets(Types::DS)[0].rrs.each {|ds|
+          # Check ds against child's DNSKEY records (if any).
+          if !Dnssec.verify_rrset(key_rrset, RRSet.new(ds))
+            @controller.log(LOG_WARNING, "Validation failure for DS record (#{ds.key_tag}) for #{name}")
+          else
+            @controller.log(LOG_INFO,"Successfully checked DS (#{ds.key_tag}) for #{name}")
+            # Now check that the DNSKEY with the DS key tag has the SEP flag set
+            key_rrset.rrs.each {|key|
+              if (key.key_tag == ds.key_tag)
+                if (!key.sep_key?)
+                  log(LOG_WARNING, "#{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
+                end
+              end
+            }
+          end
+        }
+      end
+      return true
     end
 
     def check_domain(name, type = nil)
       # Check RRSIG if type is nil
       type = Types::RRSIG if !type
-      check_child_ds 
+      return if !check_child_ds(name)
       check_sigs(name, type)
     end
 
     # Check the RRSIG expiry, etc. for a specific domain
     def check_sigs(name, type)
-      @logger.log(LOG_INFO, "Checking #{name}, #{type}")
-      ret = query(name, Types.RRSIG)
+      @controller.log(LOG_INFO, "Checking #{name}, #{type}")
+      ret = query_ignore_nxdomain(name, Types::RRSIG)
       if (ret.rcode == RCode::NXDOMAIN)
-        @logger.log(LOG_ERR, "No records found at #{name}")
-        return
+        @controller.log(LOG_ERR, "No records found at #{name}")
+        return false
       end
-      warn = 10 # @TODO@
-      critical = 10 # @TODO@
-      ret.answer.rrsets(Types.RRSIG).each {|sigs|
+      warn = @options.domain_expire_warn
+      critical = @options.domain_expire_critical
+      (ret.answer.rrsets(Types::RRSIG) + ret.authority.rrsets(Types::RRSIG)).each {|sigs|
         sigs.each {|sig|
           days = (sig.expiration - Time.now.to_i) / (60 * 60 * 24)
           if (days < 0)
-            @logger.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} has expired")
+            @controller.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} has expired")
           end
           if (critical && (days <= critical))
-            @logger.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (critical is #{critical})")
+            @controller.log(LOG_ERR, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (critical is #{critical})")
           end
           if (warn && (days <= warn))
-            @logger.log(LOG_WARNING, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (warn is #{warn})")
+            @controller.log(LOG_WARNING, "RRSIG for #{name}, #{sig.type_covered} will expire in #{days} days (warn is #{warn})")
           end
         }
       }
