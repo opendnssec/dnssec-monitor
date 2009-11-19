@@ -33,16 +33,19 @@ require 'dnsruby'
 include Dnsruby
 require 'syslog'
 include Syslog::Constants
+require 'xsd/datatypes'
+require 'rexml/document'
+include REXML
 require 'options_parser.rb'
 
-# @TODO@ We need to be able to read OpenDNSSEC config files.
-# @TODO@ Should we somehow share the auditor and monitor parse.rb and config.rb?
 # @TODO@ Check the parent DS record
-# @TODO@ Get tolerances from OpenDNSSEC files, if available (and values not specified on command line)
 # @TODO@ Validate from a signed root
+# @TODO@ Check inception and validity periods
 
 module DnssecMonitor
   class Controller
+    class LoadOpenDnssecError < Exception
+    end
     # Control a set of ZoneMonitors to do the right thing
     def initialize(options)
       @ret_val = 999
@@ -61,8 +64,23 @@ module DnssecMonitor
     end
 
     def check_options
-      # @TODO@ See if we are configured to use opendnssec configuration files.
+      # See if we are configured to use opendnssec configuration files.
       # If so, then load them up, and override existing options.
+      if (@options.opendnssec)
+        begin
+          conf_loader = OpenDnssecConfigLoader.new
+          inception_offset, min_sig_lifetime = conf_loader.load_opendnssec_config(@options, self)
+          if (!inception_offset)
+            log(LOG_ERR, "Cannot find the OpenDNSSEC installation in #{@options.opendnssec}")
+          else # override the default values
+            print "Using #{inception_offset} for inception_offset, and #{min_sig_lifetime} for min_sig_lifetime\n"
+            @options.inception_offset = inception_offset
+            @options.min_sig_lifetime = min_sig_lifetime
+          end
+        rescue Exception => e
+          log(LOG_WARNING, "Can't load OpenDNSSEC configuration : #{e}")
+        end
+      end
     end
 
     def support_ipv6?
@@ -156,6 +174,136 @@ module DnssecMonitor
       }
       return ns_addrs
     end
+  end
+
+  #This class loads the OpenDNSSEC configuration files to obtain values which
+  #will be used by the Monitor as thresholds for warnings
+  class OpenDnssecConfigLoader # :nodoc: all
+    # This class loads and stores the Signatures element of the kasp.xml policy
+    class Signatures # :nodoc: all
+      attr_accessor :resign, :refresh, :jitter, :inception_offset, :validity
+      def initialize(e)
+        resign_text = e.elements['Resign'].text
+        @resign = Signatures.xsd_duration_to_seconds(resign_text)
+        refresh_text = e.elements['Refresh'].text
+        @refresh = Signatures.xsd_duration_to_seconds(refresh_text)
+        jitter_text = e.elements['Jitter'].text
+        @jitter = Signatures.xsd_duration_to_seconds(jitter_text)
+        inception_offset_text = e.elements['InceptionOffset'].text
+        @inception_offset = Signatures.xsd_duration_to_seconds(inception_offset_text)
+
+        @validity = Validity.new(e.elements['Validity'])
+      end
+      class Validity
+        attr_accessor :default, :denial
+        def initialize(e)
+          default_text = e.elements['Default'].text
+          @default = Signatures.xsd_duration_to_seconds(default_text)
+          denial_text = e.elements['Denial'].text
+          @denial = Signatures.xsd_duration_to_seconds(denial_text)
+        end
+      end
+
+      def self.xsd_duration_to_seconds xsd_duration # :nodoc: all
+        # XSDDuration hack
+        xsd_duration = "P0DT#{$1}" if xsd_duration =~ /^PT(.*)$/
+        xsd_duration = "-P0DT#{$1}" if xsd_duration =~ /^-PT(.*)$/
+        a = XSD::XSDDuration.new xsd_duration
+        from_min = 0 | a.min * 60
+        from_hour = 0 | a.hour * 60 * 60
+        from_day = 0 | a.day * 60 * 60 * 24
+        from_month = 0 | a.month * 60 * 60 * 24 * 31
+        from_year = 0 | a.year * 60 * 60 * 24 * 365
+        # XSD::XSDDuration seconds hack.
+        x = a.sec.to_s.to_i + from_min + from_hour + from_day + from_month + from_year
+        return x
+      end
+    end
+
+    def load_opendnssec_config(options, parent) # :nodoc: all
+      # Load the config file
+      @parent = parent
+      zonelist_file, kasp_file =
+        load_config_xml(options.opendnssec +
+          (options.opendnssec[options.opendnssec.length - 2, 1] ==
+            File::SEPARATOR ? "" : File::SEPARATOR) +
+          "conf.xml")
+      # @TODO@ Do we want to override the syslog provided by the client? Almost
+      # undoubtedly not. Do we want to use it as well? Maybe...
+
+      policy = load_policy_from_zonelist(zonelist_file, options.zone)
+      return nil, nil if !policy
+
+      # Load kasp.xml
+      return load_kasp_file(kasp_file, policy)
+    end
+
+    def load_policy_from_zonelist(zonelist_file, zone) # :nodoc: all
+      # Load the zonelist.xml, locate the zone and find the policy in use
+      File.open((zonelist_file.to_s+"").untaint, 'r') {|file|
+        doc = REXML::Document.new(file)
+        doc.elements.each("ZoneList/Zone") {|z|
+          # First load the config files
+          zone_name = z.attributes['name']
+          if (zone_name.to_s == zone.to_s)
+            policy = z.elements['Policy'].text
+            return policy
+          end
+        }
+      }
+      @parent.log(LOG_WARNING, "Can't find #{zone} zone in #{zonelist_file}")
+      return nil
+    end
+
+    def load_kasp_file(kasp_file, policy) # :nodoc: all
+      inception_offset = nil
+      min_sig_lifetime = nil
+      # Locate the policy in use by the zone
+      # Load the values of interest from the Signatures element for that policy
+      found = false
+      File.open((kasp_file+"").untaint, 'r') {|file|
+        doc = REXML::Document.new(file)
+
+        # Now find the appropiate policy
+        doc.elements.each('KASP/Policy') {|p|
+          if (p.attributes['name'] == policy)
+            found = true
+            # Load the values from the Signatures element
+            signatures = Signatures.new(p.elements['Signatures'])
+            inception_offset = signatures.inception_offset
+            min_sig_lifetime = signatures.validity.default + inception_offset
+          end
+        }
+      }
+      if (!found)
+        @parent.log(LOG_WARNING, "Can't find #{policy} policy in #{kasp_file} - not loading config")
+      end
+      return inception_offset, min_sig_lifetime
+    end
+
+    def load_config_xml(conf_file) # :nodoc: all
+      zonelist = ""
+      kasp = ""
+      begin
+        File.open((conf_file + "").untaint , 'r') {|file|
+          doc = REXML::Document.new(file)
+          begin
+            zonelist = doc.elements['Configuration/Common/ZoneListFile'].text
+          rescue Exception
+            raise LoadOpenDnssecError.new("Can't read zonelist location from conf.xml")
+          end
+          begin
+            kasp = doc.elements['Configuration/Common/PolicyFile'].text
+          rescue Exception
+            raise LoadOpenDnssecError.new("Can't read KASP policy location from conf.xml")
+          end
+          return zonelist, kasp
+        }
+      rescue Errno::ENOENT
+        raise LoadOpenDnssecError.new("Can't find config file : #{conf_file}")
+      end
+    end
+
   end
 
   class NameLoader
@@ -547,9 +695,23 @@ module DnssecMonitor
         @controller.log(LOG_ERR, "No records found at #{name}")
         return false
       end
+      check_sigs_expiry(name)
+      check_sigs_inception(name)
+      check_sigs_validity(name)
+    end
+
+    def check_sigs_inception(name)
+      # @TODO@ Use @options.inception_offset to check the RRSIG inception
+    end
+
+    def check_sigs_validity(name)
+      # @TODO@ Use @options.min_sig_lifetime to check the RRSIG lifetime
+    end
+
+    def check_sigs_expiry(name, msg)
       warn = @options.domain_expire_warn
       critical = @options.domain_expire_critical
-      (ret.answer.rrsets(Types::RRSIG) + ret.authority.rrsets(Types::RRSIG)).each {|sigs|
+      (ret.answer.rrsets(Types::RRSIG) + msg.authority.rrsets(Types::RRSIG)).each {|sigs|
         sigs.each {|sig|
           days = (sig.expiration - Time.now.to_i) / (60 * 60 * 24)
           if (days < 0)

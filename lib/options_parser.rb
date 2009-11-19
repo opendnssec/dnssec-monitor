@@ -67,6 +67,9 @@ module DnssecMonitor
       options.wildcard     = 0
       options.nagios_verbosity    = 0
       options.name_list = nil
+      options.opendnssec = false
+      options.inception_offset = 999999 # @TODO@
+      options.min_sig_lifetime = 999999 # @TODO@
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -81,8 +84,8 @@ module DnssecMonitor
         end
 
         opts.on("-n", "--nameservers <ns1>[,<ns2>,<ns3>,...]", Array,
-          "Comma-separated list of nameservers to monitor for the zone",
-          "Defaults to the nameservers listed in the public DNS") do |list|
+          "Comma-separated list of nameservers", "to monitor for the zone. Defaults",
+          "to the nameservers listed in the public DNS") do |list|
           options.nameservers = list
         end
 
@@ -106,26 +109,39 @@ module DnssecMonitor
           options.zsk_expire_critical = n.to_i
         end
 
-        opts.on("--dwarn [n]", "Warn if a domain RRSIG expiry is within n days",
+        opts.on("--dwarn [n]", "Warn if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_warn}",
-        "Only useful when a list of domains to check is supplied") do |n|
+        "Only useful when a list of domains", "to check is supplied") do |n|
           options.domain_expire_warn = n.to_i
         end
 
-        opts.on("--dcritical [n]", "Error if a domain RRSIG expiry is within n days",
+        opts.on("--dcritical [n]", "Error if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_critical}",
-        "Only useful when a list of domains to check is supplied") do |n|
+        "Only useful when a list of domains to",
+        "check is supplied") do |n|
           options.domain_expire_critical = n.to_i
         end
 
+        opts.on("--ods [ods_location]", "Load the OpenDNSSEC configuration files",
+        "from this location and use values for",
+        "InceptionOffset and ValidityPeriod",
+        "from them. Otherwise, defaults will",
+        "be used for these (#{options.inception_offset} for",
+        "InceptionOffset, #{options.min_sig_lifetime} for ValidityPeriod).",
+        "OpenDNSSEC must have been installed on this",
+        "system if this option is used") do |location|
+          options.opendnssec = location
+        end
+
         opts.on("-w", "--wilcard",
-          "NXDomain checks will be disabled if wildcards are enabled") do |on|
+          "NXDomain checks will be disabled if",
+          "wildcards are enabled") do |on|
           options.wilcard = on
         end
 
         opts.on("--names name1,name2,name3", Array,
           "List of names to check in the zone", 
-          "Note that there must be no whitespace between the names") do |list|
+          "Note that there must be no whitespace", "between the names") do |list|
           options.name_list = {}
           list.each {|n|
             options.name_list[Dnsruby::Name.create(n)] = []
