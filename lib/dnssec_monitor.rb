@@ -41,82 +41,28 @@ require 'options_parser.rb'
 # @TODO@ Get tolerances from OpenDNSSEC files, if available (and values not specified on command line)
 # @TODO@ Validate from a signed root
 
-# @TODO@ Should we try to require 'kasp_auditor.rb' here? If it not available, then
-# we can note that and not attempt to read from the KASP config files
-
 module DnssecMonitor
-  class DomainLoader
-    # @TODO@ Load the list of domains in the zone (or a zonefile)
-  end
   class Controller
     # Control a set of ZoneMonitors to do the right thing
     def initialize(options)
       @ret_val = 999
       @options = options
+      check_options
       if (!options.zone)
         log(LOG_ERR, "No zone name specified")
         exit(1)
       end
-      load_names
+      name_loader = NameLoader.new
+      @name_list = name_loader.load_names(@options)
       @ipv6ok = support_ipv6?
       if (!@ipv6ok)
         log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
       end
     end
 
-    def load_names
-      @name_list = nil
-      # Now load the namefile or zonefile, if appropriate
-      if (@options.name_list)
-        # Do nothing - this overrides files
-        @name_list = @options.name_list
-      elsif (@options.zonefile)
-        # Load the zonefile into the name_list
-        if (!File.exist?@options.zonefile)
-          log(LOG_ERR, "Zone file #{@options.zonefile} does not exist")
-        else
-          @name_list = {}
-          zone_reader = Dnsruby::ZoneReader.new(@options.zone)
-          line_num = 0
-          IO.foreach(@options.zonefile) {|line|
-            line_num += 1
-            begin
-              rr = zone_reader.process(line)
-              @name_list[rr.name] = rr.type
-            rescue Exception => e
-              log(LOG_ERR, "Can't understand line #{line_num} of #{@options.zonefile} : #{line}")
-            end
-          }
-        end
-      elsif (@options.namefile)
-        # Load the namefile into the name_list
-        if (!File.exist?@options.namefile)
-          log(LOG_ERR, "Name file #{@options.namefile} does not exist")
-        else
-          @name_list = {}
-          line_num = 0
-          IO.foreach(@options.namefile) {|line|
-            line_num += 1
-            split = line.split
-            name = split[0]
-            begin
-              name = Dnsruby::Name.create(name)
-              @name_list[name] = []
-              (split.length-1).times {|i|
-                @name_list[name].push(Types.new(split[i+1]))
-              }
-            rescue Exception => e
-              log(LOG_ERR, "Can't understand line #{line_num} of #{@options.namefile} : #{line}")
-            end
-          }
-        end
-      else
-        # @TODO@ Load the zone names by walking the zone?
-        # Should this be an explicit option?
-        #      if (nsec_signed)
-        #        @name_list = walk_zone
-        #      end
-      end
+    def check_options
+      # @TODO@ See if we are configured to use opendnssec configuration files.
+      # If so, then load them up, and override existing options.
     end
 
     def support_ipv6?
@@ -210,8 +156,79 @@ module DnssecMonitor
       }
       return ns_addrs
     end
-
   end
+
+  class NameLoader
+    # Load the list of domains in the zone (or a zonefile)
+    def load_names(options)
+      name_list = nil
+      # Now load the namefile or zonefile, if appropriate
+      if (options.name_list)
+        # Do nothing - this overrides files
+        name_list = options.name_list
+      elsif (options.zonefile)
+        name_list = load_zonefile(options)
+      elsif (options.namefile)
+        name_list = load_namefile(options)
+      else
+        # @TODO@ Load the zone names by walking the zone?
+        # Should this be an explicit option?
+        #      if (nsec_signed)
+        #        name_list = walk_zone(options)
+        #      end
+      end
+      return name_list
+    end
+
+    def load_namefile(options)
+      name_list = nil
+      # Load the namefile into the name_list
+      if (!File.exist?options.namefile)
+        log(LOG_ERR, "Name file #{options.namefile} does not exist")
+      else
+        name_list = {}
+        line_num = 0
+        IO.foreach(options.namefile) {|line|
+          line_num += 1
+          split = line.split
+          name = split[0]
+          begin
+            name = Dnsruby::Name.create(name)
+            name_list[name] = []
+            (split.length-1).times {|i|
+              name_list[name].push(Types.new(split[i+1]))
+            }
+          rescue Exception => e
+            log(LOG_ERR, "Can't understand line #{line_num} of #{options.namefile} : #{line}")
+          end
+        }
+      end
+      return name_list
+    end
+
+    def load_zonefile(options)
+      name_list = nil
+      # Load the zonefile into the name_list
+      if (!File.exist?options.zonefile)
+        log(LOG_ERR, "Zone file #{options.zonefile} does not exist")
+      else
+        name_list = {}
+        zone_reader = Dnsruby::ZoneReader.new(options.zone)
+        line_num = 0
+        IO.foreach(options.zonefile) {|line|
+          line_num += 1
+          begin
+            rr = zone_reader.process(line)
+            name_list[rr.name] = rr.type
+          rescue Exception => e
+            log(LOG_ERR, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
+          end
+        }
+      end
+      return name_list
+    end
+  end
+
   class ZoneMonitor
     def initialize(options, nameserver, controller, name_list)
       @zone = options.zone
