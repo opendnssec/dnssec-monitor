@@ -105,7 +105,7 @@ def get_expiry_from(monitor_output)
   index = monitor_output.index("will expire in")
   return EXPIRY_MAX if !index
   text = monitor_output[index, 25]
-  num_days = text.split()[3]
+  num_days = text.split()[3].to_i
   return num_days
 end
 
