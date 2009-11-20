@@ -68,8 +68,8 @@ module DnssecMonitor
       options.nagios_verbosity    = 0
       options.name_list = nil
       options.opendnssec = false
-      options.inception_offset = 999999 # @TODO@
-      options.min_sig_lifetime = 999999 # @TODO@
+      options.inception_offset = 3600
+      options.min_sig_lifetime = 3600
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
