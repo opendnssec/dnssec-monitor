@@ -40,6 +40,8 @@ require 'options_parser.rb'
 
 # @TODO@ Check the parent DS record
 # @TODO@ Validate from a signed root
+#
+# @TODO@ Test code!
 
 module DnssecMonitor
   class Controller
@@ -612,8 +614,65 @@ module DnssecMonitor
       }
     end
 
-    def check_parent_ds # @TODO@
-      # @TODO@ Check the parent DS - either in the normal DNS or the ISC DLV registry
+    def get_parent_for(name)
+      if (name.labels.length <= 1)
+        return Name.create(".")
+      end
+      n = Name.new(name.labels()[0, name.labels.length-1], name.absolute?)
+      return n
+    end
+
+    def check_parent_ds
+      # Find the parent
+      parent = get_parent_for(@zone)
+      nss = @controller.get_nameservers(parent)
+      nameservers = []
+      nss.each {|nameserver, nsname|
+        nameservers.push(nameserver.to_s)
+      }
+      res = Resolver.new({:nameserver => nameservers})
+      # Then look up the DS record for the child
+      begin
+        response = res.query(@zone, "DS")
+      rescue Exception => e
+        @controller.log(LOG_ERR, "Can't find DS records for #{@zone} in parent zone (#{parent}.) : #{e}")
+        return
+      end
+      ds_rrsets = response.answer.rrsets("DS")
+      if (ds_rrsets.length == 0)
+        # @TODO@ Try loading DLV records from the configured DLV service instead
+      end
+      # Get the DNSKEYs for the target zone
+      key_response = query(@zone, Types.DNSKEY)
+      verified = false
+      key_response.rrsets("DNSKEY").each {|key_rrset|
+        # And make sure it hooks up to the zone in question
+        ds_rrsets.each {|ds_rrset|
+          ds_rrset.rrs.each {|ds|
+            #  Try to verify the child's DNSKEY record against the DS record
+            begin
+              if (Dnssec.verify_rrset(key_rrset, ds))
+                verified = true
+              end
+            rescue VerifyError => e
+              @controller.log("Error verifying DS record : #{e}\n")
+            end
+          }
+        }
+      }
+      if (!verified)
+        # Couldn't verify the DS record to the child
+        @controller.log(LOG_ERR, "ERROR : Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrsets.length} DS RRSets found for #{@zone})")
+      end
+    end
+
+    def check_validation_from_root
+      # @TODO@
+      # @TODO@ Need to be primed here with the key for the signed root (or ISC DLV registry).
+      # How should we obtain this?
+      # @TODO@ Should it be configurable whether we use signed root or DLV?
+      # Yes - make command-line option - --rootkey or --dlvkey to point to file with root key in it
+      # If neither of these are set, then disable this test.
     end
 
     def get_nameservers_for_child(zone)
@@ -685,29 +744,29 @@ module DnssecMonitor
         # Now get the DNSKEYs for the child zone
         resolver = Dnsruby::Resolver.new({:nameservers => ns_addr_strs})
         begin
-        key_msg = query(name, Types::DNSKEY, resolver)
-        key_rrsets = key_msg.answer.rrsets(Types::DNSKEY)
-        if (key_rrsets.length == 0)
-          @controller.log(LOG_WARNING, "(#{@nsname}): Can't validate DS records for #{name}, as no DNSKEY records are present in the #{name} zone")
-          return true
-        end
-        key_rrset = key_rrsets[0]
-        ret.answer.rrsets(Types::DS).each{|rrset| rrset.rrs.each {|ds|
-            # Check ds against child's DNSKEY records (if any).
-            if !Dnssec.verify_rrset(key_rrset, RRSet.new(ds))
-              @controller.log(LOG_WARNING, "(#{@nsname}): Validation failure for DS record (#{ds.key_tag}) for #{name}")
-            else
-              @controller.log(LOG_INFO,"(#{@nsname}): Successfully checked DS (#{ds.key_tag}) for #{name}")
-              # Now check that the DNSKEY with the DS key tag has the SEP flag set
-              key_rrset.rrs.each {|key|
-                if (key.key_tag == ds.key_tag)
-                  if (!key.sep_key?)
-                    log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
+          key_msg = query(name, Types::DNSKEY, resolver)
+          key_rrsets = key_msg.answer.rrsets(Types::DNSKEY)
+          if (key_rrsets.length == 0)
+            @controller.log(LOG_WARNING, "(#{@nsname}): Can't validate DS records for #{name}, as no DNSKEY records are present in the #{name} zone")
+            return true
+          end
+          key_rrset = key_rrsets[0]
+          ret.answer.rrsets(Types::DS).each{|rrset| rrset.rrs.each {|ds|
+              # Check ds against child's DNSKEY records (if any).
+              if !Dnssec.verify_rrset(key_rrset, RRSet.new(ds))
+                @controller.log(LOG_WARNING, "(#{@nsname}): Validation failure for DS record (#{ds.key_tag}) for #{name}")
+              else
+                @controller.log(LOG_INFO,"(#{@nsname}): Successfully checked DS (#{ds.key_tag}) for #{name}")
+                # Now check that the DNSKEY with the DS key tag has the SEP flag set
+                key_rrset.rrs.each {|key|
+                  if (key.key_tag == ds.key_tag)
+                    if (!key.sep_key?)
+                      log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
+                    end
                   end
-                end
-              }
-            end
-          }}
+                }
+              end
+            }}
         rescue ResolvTimeout => e
           @controller.log(LOG_WARNING, "(#{@nsname}): Timeout loading child keys for #{name}")
         end
