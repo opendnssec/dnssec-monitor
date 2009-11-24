@@ -42,6 +42,7 @@ require 'options_parser.rb'
 # @TODO@ Validate from a signed root
 #
 # @TODO@ Test code!
+# Use Timecop to test one static zone at different times to generate warnings.
 
 module DnssecMonitor
   class Controller
@@ -402,7 +403,10 @@ module DnssecMonitor
         fetch_zone_keys
         check_apex
         check_nxdomain(Types.NS, @options.wildcard)
-        check_parent_ds
+        if (@options.do_validation_checks)
+          check_parent_ds
+          check_validation_from_root
+        end
         if (@name_list)
           @name_list.each {|domain, types|
             if (types.length == 0)

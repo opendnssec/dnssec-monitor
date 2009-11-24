@@ -70,6 +70,7 @@ module DnssecMonitor
       options.opendnssec = false
       options.inception_offset = 3600
       options.min_sig_lifetime = 3600
+      options.do_validation_checks = true
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -133,7 +134,7 @@ module DnssecMonitor
           options.opendnssec = location
         end
 
-        opts.on("-w", "--wilcard",
+        opts.on("--[no-]wilcard",
           "NXDomain checks will be disabled if",
           "wildcards are enabled") do |on|
           options.wilcard = on
@@ -156,6 +157,11 @@ module DnssecMonitor
         opts.on("--zonefile file", "Name of zone file to load list of names to ",
             "check against zone") do |zf|
           options.zonefile= zf
+        end
+
+        opts.on("--[no-]validation", "Define whether to check parent DS records",
+        "and validation from the root") do |on|
+          options.do_validation_checks = on
         end
 
 
