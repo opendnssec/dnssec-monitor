@@ -71,6 +71,7 @@ module DnssecMonitor
       options.inception_offset = 3600
       options.min_sig_lifetime = 3600
       options.do_validation_checks = true
+      options.dlv = "dlv.isc.org."
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -112,25 +113,25 @@ module DnssecMonitor
 
         opts.on("--dwarn [n]", "Warn if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_warn}",
-        "Only useful when a list of domains", "to check is supplied") do |n|
+          "Only useful when a list of domains", "to check is supplied") do |n|
           options.domain_expire_warn = n.to_i
         end
 
         opts.on("--dcritical [n]", "Error if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_critical}",
-        "Only useful when a list of domains to",
-        "check is supplied") do |n|
+          "Only useful when a list of domains to",
+          "check is supplied") do |n|
           options.domain_expire_critical = n.to_i
         end
 
         opts.on("--ods [ods_location]", "Load the OpenDNSSEC configuration files",
-        "from this location and use values for",
-        "InceptionOffset and ValidityPeriod",
-        "from them. Otherwise, defaults will",
-        "be used for these (#{options.inception_offset} for",
-        "InceptionOffset, #{options.min_sig_lifetime} for ValidityPeriod).",
-        "OpenDNSSEC must have been installed on this",
-        "system if this option is used") do |location|
+          "from this location and use values for",
+          "InceptionOffset and ValidityPeriod",
+          "from them. Otherwise, defaults will",
+          "be used for these (#{options.inception_offset} for",
+          "InceptionOffset, #{options.min_sig_lifetime} for ValidityPeriod).",
+          "OpenDNSSEC must have been installed on this",
+          "system if this option is used") do |location|
           options.opendnssec = location
         end
 
@@ -150,20 +151,38 @@ module DnssecMonitor
         end
 
         opts.on("--namefile file", "Name of file containing list of names (and ",
-            "optional types) to check in the zone") do |f|
+          "optional types) to check in the zone") do |f|
           options.namefile = f
         end
 
         opts.on("--zonefile file", "Name of zone file to load list of names to ",
-            "check against zone") do |zf|
+          "check against zone") do |zf|
           options.zonefile= zf
         end
 
         opts.on("--[no-]validation", "Define whether to check parent DS records",
-        "and validation from the root") do |on|
+          "and validation from the root", "Defaults to #{options.do_validation_checks}") do |on|
           options.do_validation_checks = on
         end
 
+        opts.on("--rootkey file", "Configure the key for the signed root",
+          "Defines file to load root key from",
+          "Validation from root will not be tested",
+          "if this is not configured") do |rootkey|
+          options.root_key = rootkey
+        end
+
+        opts.on("--dlv", "Configure the location of the DLV service",
+          "Defaults to #{options.dlv}",
+          "DLV will only be used if dlvkey is set") do |dlv|
+          options.dlv = dlv
+        end
+
+        opts.on("--dlvkey file", "Configure the DLV key",
+          "Defines file to load DLV key from",
+          "DLV won't be used if this isn't set") do |dlvkey|
+          options.dlv_key = dlvkey
+        end
 
 
         if (support_nagios) # Running nagios_dnssec.rb

@@ -38,7 +38,6 @@ require 'rexml/document'
 include REXML
 require 'options_parser.rb'
 
-# @TODO@ Check the parent DS record
 # @TODO@ Validate from a signed root
 #
 # @TODO@ Test code!
@@ -63,6 +62,39 @@ module DnssecMonitor
       if (!@ipv6ok)
         log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
       end
+      configure_verifiers
+    end
+
+    attr_reader :dlv_verifier
+
+    def configure_verifiers
+      if (@options.dlv && @options.dlv_key)
+        # Try loading DLV records from the configured DLV service instead
+        # Load the DLV key from the file, and configure the verifier with it
+        @dlv_verifier = SingleVerifier.new(SingleVerifier::VerifierType::DLV)
+        dlv_key = load_key(@options.dlv_key)
+        if (dlv_key)
+          @dlv_verifier.add_dlv_key(dlv_key)
+        end
+      end
+    end
+
+    def load_key(file)
+      if File.exist?(file)
+        zone_reader = Dnsruby::ZoneReader.new(@zone.to_s)
+        IO.foreach(file) { |line|
+          ret = zone_reader.process_line(line)
+          # Load the key and return it to the user.
+          # Use the Dnsruby::ZoneReader to load the RR from the file.
+          if (ret)
+            new_line, type, last_name = ret
+            key = RR.create(new_line)
+            print "Loaded key from #{file} : #{key}\n"
+            return key
+          end
+        }
+      end
+      return nil
     end
 
     def check_options
@@ -642,31 +674,32 @@ module DnssecMonitor
         @controller.log(LOG_ERR, "Can't find DS records for #{@zone} in parent zone (#{parent}.) : #{e}")
         return
       end
-      ds_rrsets = response.answer.rrsets("DS")
-      if (ds_rrsets.length == 0)
-        # @TODO@ Try loading DLV records from the configured DLV service instead
+      ds_rrset = response.answer.rrset("DS")
+      dlv = false
+      if (ds_rrset.length == 0)
+        # Is there a configured DLV service?
+        if (@options.dlv_key)
+          @controller.log(LOG_INFO, "Trying to load DLV records for #{@zone}")
+          temp = @controller.dlv_verifier.query_dlv_for(@zone)
+          if temp
+            ds_rrset = temp
+            dlv = true
+          end
+        end
       end
       # Get the DNSKEYs for the target zone
       key_response = query(@zone, Types.DNSKEY)
-      verified = false
-      key_response.rrsets("DNSKEY").each {|key_rrset|
-        # And make sure it hooks up to the zone in question
-        ds_rrsets.each {|ds_rrset|
-          ds_rrset.rrs.each {|ds|
-            #  Try to verify the child's DNSKEY record against the DS record
-            begin
-              if (Dnssec.verify_rrset(key_rrset, ds))
-                verified = true
-              end
-            rescue VerifyError => e
-              @controller.log("Error verifying DS record : #{e}\n")
-            end
-          }
-        }
-      }
-      if (!verified)
-        # Couldn't verify the DS record to the child
-        @controller.log(LOG_ERR, "ERROR : Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrsets.length} DS RRSets found for #{@zone})")
+      key_rrset = key_response.answer.rrset(@zone, "DNSKEY")
+      # And make sure it hooks up to the zone in question
+      #  Try to verify the child's DNSKEY record against the DS record
+      begin
+        if (dlv)
+          @controller.dlv_verifier.verify(key_rrset, ds_rrset)
+        else
+          Dnssec.verify(key_rrset, ds_rrset)
+        end
+      rescue VerifyError => e
+        @controller.log(LOG_ERR, "ERROR : Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrset.rrs.length} DS RRs found for #{@zone}) : #{e}")
       end
     end
 
