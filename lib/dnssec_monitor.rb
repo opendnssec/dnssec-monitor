@@ -38,8 +38,6 @@ require 'rexml/document'
 include REXML
 require 'options_parser.rb'
 
-# @TODO@ Validate from a signed root
-#
 # @TODO@ Test code!
 # Use Timecop to test one static zone at different times to generate warnings.
 
@@ -68,6 +66,20 @@ module DnssecMonitor
     attr_reader :dlv_verifier
 
     def configure_verifiers
+      configure_dlv_verifier
+      configure_root_verifier
+    end
+
+    def configure_root_verifier
+      if (@options.root_key)
+        root_key = load_key(@options.root_key)
+        if (root_key)
+          Dnssec.add_trust_anchor(root_key)
+        end
+      end
+    end
+
+    def configure_dlv_verifier
       if (@options.dlv && @options.dlv_key)
         # Try loading DLV records from the configured DLV service instead
         # Load the DLV key from the file, and configure the verifier with it
@@ -89,7 +101,7 @@ module DnssecMonitor
           if (ret)
             new_line, type, last_name = ret
             key = RR.create(new_line)
-            print "Loaded key from #{file} : #{key}\n"
+            log(LOG_INFO, "Loaded key from #{file} : #{key}\n")
             return key
           end
         }
@@ -699,17 +711,37 @@ module DnssecMonitor
           Dnssec.verify(key_rrset, ds_rrset)
         end
       rescue VerifyError => e
-        @controller.log(LOG_ERR, "ERROR : Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrset.rrs.length} DS RRs found for #{@zone}) : #{e}")
+        @controller.log(LOG_ERR, "Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrset.rrs.length} DS RRs found for #{@zone}) : #{e}")
       end
     end
 
     def check_validation_from_root
-      # @TODO@
-      # @TODO@ Need to be primed here with the key for the signed root (or ISC DLV registry).
-      # How should we obtain this?
-      # @TODO@ Should it be configurable whether we use signed root or DLV?
-      # Yes - make command-line option - --rootkey or --dlvkey to point to file with root key in it
-      # If neither of these are set, then disable this test.
+      failed = true
+      msg = @res.query(@zone, Types.DNSKEY)
+      begin
+        Dnssec.validate(msg)
+      rescue VerifyError => e
+      end
+      if (!@options.root_key)
+        msg.security_error = VerifyError.new("No root key configured")
+      end
+      if (msg.security_level == Message::SecurityLevel.SECURE)
+        failed = false
+      end
+      if (failed && @controller.dlv_verifier)
+        failed = !validate_from_dlv(msg)
+      end
+      if (failed)
+        @controller.log(LOG_ERR, "Can't validate #{@zone} : #{msg.security_error}")
+      end
+    end
+
+    def validate_from_dlv(msg)
+      @controller.log(LOG_INFO, "Validating with DLV")
+      query = Message.new()
+      query.header.cd=true
+      @controller.dlv_verifier.validate(msg, query)
+      return (msg.security_level == Message::SecurityLevel.SECURE)
     end
 
     def get_nameservers_for_child(zone)
