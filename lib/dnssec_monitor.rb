@@ -38,9 +38,6 @@ require 'rexml/document'
 include REXML
 require 'options_parser.rb'
 
-# @TODO@ Test code!
-# Use Timecop to test one static zone at different times to generate warnings.
-
 module DnssecMonitor
   class Controller
     class LoadOpenDnssecError < Exception
@@ -143,7 +140,7 @@ module DnssecMonitor
     end
     def log(priority, message)
       # Maintain the current max syslog error level
-      if (priority.to_i < @ret_val)
+      if ((priority.to_i < @ret_val) && (priority <= LOG_WARNING))
         @ret_val = priority.to_i
       end
       if ($syslog) # Called from Nagios plugin
