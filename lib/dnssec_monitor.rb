@@ -46,6 +46,7 @@ module DnssecMonitor
     def initialize(options)
       @ret_val = 999
       @options = options
+      @recursor = nil
       check_options
       if (!options.zone)
         log(LOG_ERR, "No zone name specified")
@@ -69,9 +70,11 @@ module DnssecMonitor
 
     def configure_root_verifier
       if (@options.root_key)
-        root_key = load_key(@options.root_key)
-        if (root_key)
-          Dnssec.add_trust_anchor(root_key)
+        root_keys = load_keys(@options.root_key)
+        if (root_keys)
+          root_keys.each {|root_key|
+            Dnssec.add_trust_anchor(root_key)
+          }
         end
       end
     end
@@ -81,14 +84,17 @@ module DnssecMonitor
         # Try loading DLV records from the configured DLV service instead
         # Load the DLV key from the file, and configure the verifier with it
         @dlv_verifier = SingleVerifier.new(SingleVerifier::VerifierType::DLV)
-        dlv_key = load_key(@options.dlv_key)
-        if (dlv_key)
-          @dlv_verifier.add_dlv_key(dlv_key)
+        dlv_keys = load_keys(@options.dlv_key)
+        if (dlv_keys)
+          dlv_keys.each {|dlv_key|
+            @dlv_verifier.add_dlv_key(dlv_key)
+          }
         end
       end
     end
 
-    def load_key(file)
+    def load_keys(file)
+      keys = []
       if File.exist?(file)
         zone_reader = Dnsruby::ZoneReader.new(@zone.to_s)
         IO.foreach(file) { |line|
@@ -98,10 +104,14 @@ module DnssecMonitor
           if (ret)
             new_line, type, last_name = ret
             key = RR.create(new_line)
+            keys.push(key)
             log(LOG_INFO, "Loaded key from #{file} : #{key}\n")
-            return key
+            #            return key
           end
         }
+      end
+      if (keys.length > 0)
+        return keys
       end
       return nil
     end
@@ -162,6 +172,10 @@ module DnssecMonitor
       if (!nameservers)
         nameservers = get_nameservers(@options.zone)
       end
+      if (nameservers.length == 0)
+        log(LOG_ERR, "Can't find authoritative nameservers for #{@options.zone}")
+        exit(3)
+      end
       threads = []
       nameservers.each {|nameserver, nsname|
         thread = Thread.new() {
@@ -181,10 +195,23 @@ module DnssecMonitor
       end
     end
 
+    def get_recursor
+      if !(@recursor)
+        if (@options.hints)
+          res_hints = Resolver.new({:nameserver => @options.hints})
+          @recursor = Recursor.new(res_hints)
+          Dnssec.default_resolver = res_hints
+        else
+          @recursor = Recursor.new
+        end
+      end
+      return @recursor
+    end
+
     def get_nameservers(zone)
       # Get the nameservers for the zone
       msg = nil
-      recursor = Recursor.new()
+      recursor = get_recursor
       begin
         msg = recursor.query(zone, "NS")
       rescue Exception => e
@@ -198,6 +225,7 @@ module DnssecMonitor
           log(LOG_ERR, "SOA name reported from #{recursor} is #{rr.name}, but should be #{zone}")
         end
       }
+
       nameservers = []
       msg.answer.rrsets(Types::NS).each {|rrset|
         rrset.rrs.each {|rr| nameservers.push(rr.nsdname)}
@@ -208,6 +236,7 @@ module DnssecMonitor
       types.push(Types::AAAA) if @ipv6ok
       types.each {|type|
         nameservers.each {|ns|
+          log(LOG_INFO,"querying #{ns} for #{Types.new(type).string}")
           ret = recursor.query(ns, type)
           ret.answer.rrsets(type).each {|rrset|
             rrset.rrs.each {|rr|
@@ -434,8 +463,8 @@ module DnssecMonitor
       @verifier = SingleVerifier.new(SingleVerifier::VerifierType::ROOT)
     end
     def check_zone()
-      Dnssec.clear_trust_anchors
-      Dnssec.clear_trusted_keys
+      #      Dnssec.clear_trust_anchors
+      #      Dnssec.clear_trusted_keys
       # Run-once monitor for a single zone - report any errors to syslog, and
       # return a code indicating the most severe error we encountered.
       error = 0
@@ -501,6 +530,7 @@ module DnssecMonitor
         rrset.rrs.each {|rr|
           if  ((rr.protocol == 3) &&  (rr.zone_key?))
             @verifier.add_trusted_key(RRSet.new(rr))
+            #            Dnssec.add_trusted_key(RRSet.new(rr))
             if (rr.sep_key?)
               @controller.log(LOG_INFO,"(#{@nsname}): Adding ksk : #{rr.key_tag}")
               @ksks.push(rr)
@@ -520,7 +550,7 @@ module DnssecMonitor
       ret.answer.rrsets(Types.DNSKEY).each {|rrset|
         # Verify with both ZSKs and KSKs
         verify_rrset(rrset, @ksks)
-        verify_rrset(rrset, @zsks)
+        #        verify_rrset(rrset, @zsks)
       }
     end
 
@@ -663,7 +693,7 @@ module DnssecMonitor
       if (name.labels.length <= 1)
         return Name.create(".")
       end
-      n = Name.new(name.labels()[0, name.labels.length-1], name.absolute?)
+      n = Name.new(name.labels()[1, name.labels.length-1], name.absolute?)
       return n
     end
 
@@ -683,7 +713,7 @@ module DnssecMonitor
         @controller.log(LOG_ERR, "Can't find DS records for #{@zone} in parent zone (#{parent}.) : #{e}")
         return
       end
-      ds_rrset = response.answer.rrset("DS")
+      ds_rrset = response.answer.rrset(@zone, "DS")
       dlv = false
       if (ds_rrset.length == 0)
         # Is there a configured DLV service?
@@ -776,7 +806,7 @@ module DnssecMonitor
               }
             }
             if (!found)
-              recursor = Recursor.new
+              recursor = @controller.get_recursor
               ret = recursor.query(ns, type)
               ret.answer.rrsets(type).each {|rrset|
                 rrset.rrs.each {|rr|

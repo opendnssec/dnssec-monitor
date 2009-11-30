@@ -141,7 +141,7 @@ module DnssecMonitor
           options.wilcard = on
         end
 
-        opts.on("--names name1,name2,name3", Array,
+        opts.on("--names name1,name2,name3...", Array,
           "List of names to check in the zone", 
           "Note that there must be no whitespace", "between the names") do |list|
           options.name_list = {}
@@ -182,6 +182,12 @@ module DnssecMonitor
           "Defines file to load DLV key from",
           "DLV won't be used if this isn't set") do |dlvkey|
           options.dlv_key = dlvkey
+        end
+
+        opts.on("--hints hint1,hint2,hint3...", Array, "Configure the root hints",
+          "Defines the servers to use as root",
+          "Note that there must be no whitespace", "between the names") do |nss|
+          options.hints = nss
         end
 
 
