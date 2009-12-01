@@ -35,14 +35,14 @@ require 'rubygems'
 include Syslog::Constants
 require 'options_parser.rb'
 EXPIRY_MAX = 99999
-def process_log(options, stderr, syslog = nil)
+def process_log(options, output, syslog = nil)
   nagios_buffer = []
   worst_nagios_error = 0
   worst_nagios_output = ""
   closest_to_expiry = EXPIRY_MAX
   nagios_message = ""
   num_worst_errors = 0
-  while (line = stderr[0].gets)
+  output.each do |line|
     line.sub!("nagios_dnssec: ", "")
     syslog_error = line[0,1].to_i
     message = line[1,line.length]
@@ -178,21 +178,14 @@ ARGV.each {|e|
 
 # Now fire up the dnssec_monitor in another process, catching its syslog output
 # and error return
-stderr = IO::pipe
-pid = fork {
-  stderr[0].close
-  STDERR.reopen(stderr[1])
-  stderr[1].close
-
-  options = Syslog::LOG_PERROR | Syslog::LOG_NDELAY
-  Syslog.open("nagios_dnssec", options) {|syslog|
-    $syslog = syslog # Get monitor to use our syslog so we can trap the output
-    eval "require 'dnssec_monitor.rb'"
+output = []
+  IO.popen("ruby dnssec_monitor.rb #{ARGV.join" "}") {|fhi|
+  while (line = fhi.gets)
+    output.push(line)
+  end
   }
-}
-stderr[1].close
-Process.waitpid(pid)
 ret_val = $?.exitstatus
+#print "Finished checking\n"
 # Turn the exit code into a nagios exit code
 nagios_ret = get_nagios_error_from_syslog(ret_val)
 if (ret_val == 1)
@@ -206,12 +199,12 @@ if (log_facility)
   syslog_facility = eval "Syslog::LOG_" + (log_facility.upcase+"").untaint
   Syslog.open("nagios_dnssec", Syslog::LOG_PID |
     Syslog::LOG_CONS, syslog_facility) { |syslog|
-    process_log(options, stderr, syslog)
+    process_log(options, output, syslog)
   }
 else
   # If the user hasn't specified syslog, then don't bother using it
-  process_log(options, stderr)
+  process_log(options, output)
 end
 
-#print "EXITING : #{nagios_ret}\n"
+print "EXITING : #{nagios_ret}\n"
 exit(nagios_ret)
