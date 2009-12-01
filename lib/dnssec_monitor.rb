@@ -236,7 +236,7 @@ module DnssecMonitor
       types.push(Types::AAAA) if @ipv6ok
       types.each {|type|
         nameservers.each {|ns|
-          log(LOG_INFO,"querying #{ns} for #{Types.new(type).string}")
+#          log(LOG_INFO,"querying #{ns} for #{Types.new(type).string}")
           ret = recursor.query(ns, type)
           ret.answer.rrsets(type).each {|rrset|
             rrset.rrs.each {|rr|

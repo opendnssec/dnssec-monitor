@@ -28,5 +28,10 @@ require 'test/unit'
 class TestNagios < Test::Unit::TestCase
   def test_nagios
     # @TODO@
+    # We have already tested the functionality of dnssec_monitor.
+    # Here, we wish to test the extra NAGIOS functionality, 
+    # and the interaction between the nagios wrapper and dnssec_monitor
+    # Just test it on the fake zones - no online testing
+    #
   end
 end
