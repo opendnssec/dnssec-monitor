@@ -206,5 +206,5 @@ else
   process_log(options, output)
 end
 
-print "EXITING : #{nagios_ret}\n"
+#print "EXITING : #{nagios_ret}\n"
 exit(nagios_ret)
