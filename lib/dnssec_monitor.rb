@@ -38,6 +38,8 @@ require 'rexml/document'
 include REXML
 require 'options_parser.rb'
 
+#Dnsruby::TheLog.level = Logger::DEBUG
+
 module DnssecMonitor
   class Controller
     class LoadOpenDnssecError < Exception
@@ -234,16 +236,40 @@ module DnssecMonitor
       ns_addrs = {}
       types = [Types::A]
       types.push(Types::AAAA) if @ipv6ok
+      ids = []
+      count = 0
+      mutex = Mutex.new
       types.each {|type|
-        nameservers.each {|ns|
-#          log(LOG_INFO,"querying #{ns} for #{Types.new(type).string}")
-          ret = recursor.query(ns, type)
-          ret.answer.rrsets(type).each {|rrset|
-            rrset.rrs.each {|rr|
-              ns_addrs[rr.address]=ns
+        ids[count] = Thread.new {
+          nameservers.each {|ns|
+            found = false
+            msg.additional.rrsets(type).each {|rrset|
+              rrset.rrs.each {|rr|
+                if (rr.name == ns)
+                  found = true
+                  mutex.synchronize {
+                    ns_addrs[rr.address]=ns
+                  }
+                end
+              }
             }
+            if (!found)
+              ret = recursor.query(ns, type) || Message.new
+              ret.answer.rrsets(type).each {|rrset|
+                rrset.rrs.each {|rr|
+                  found = true
+                  mutex.synchronize {
+                    ns_addrs[rr.address]=ns
+                  }
+                }
+              }
+            end
           }
         }
+        count += 1
+      }
+      ids.each {|id|
+        id.join
       }
       return ns_addrs
     end
@@ -735,7 +761,7 @@ module DnssecMonitor
         if (dlv)
           @controller.dlv_verifier.verify(key_rrset, ds_rrset)
         else
-          Dnssec.verify(key_rrset, ds_rrset)
+          @verifier.verify(key_rrset, ds_rrset)
         end
       rescue VerifyError => e
         @controller.log(LOG_ERR, "Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrset.rrs.length} DS RRs found for #{@zone}) : #{e}")
@@ -744,9 +770,10 @@ module DnssecMonitor
 
     def check_validation_from_root
       failed = true
-      msg = @res.query(@zone, Types.DNSKEY)
+      query = Message.new(@zone, Types.DNSKEY)
+      msg = @res.send_message(query)
       begin
-        Dnssec.validate(msg)
+        @verifier.validate(msg, query)
       rescue VerifyError => e
       end
       if (!@options.root_key)
@@ -767,8 +794,13 @@ module DnssecMonitor
       @controller.log(LOG_INFO, "Validating with DLV")
       query = Message.new()
       query.header.cd=true
-      @controller.dlv_verifier.validate(msg, query)
-      return (msg.security_level == Message::SecurityLevel.SECURE)
+      begin
+        @controller.dlv_verifier.validate(msg, query)
+        return (msg.security_level == Message::SecurityLevel.SECURE)
+      rescue VerifyError => e
+        msg.security_error = e
+        return false
+      end
     end
 
     def get_nameservers_for_child(zone)
@@ -873,6 +905,9 @@ module DnssecMonitor
     def check_domain(name, type = nil)
       # Check RRSIG if type is nil
       type = Types.RRSIG if !type
+      if (!Name.create(name).absolute?)
+        name = name.to_s + "." + @zone.to_s
+      end
       check_sigs(name, type)
       check_child_ds(name)
     end
@@ -885,7 +920,11 @@ module DnssecMonitor
         @controller.log(LOG_ERR, "(#{@nsname}): No records found at #{name}")
         return false
       end
-      (ret.answer.rrsets(Types::RRSIG) + ret.authority.rrsets(Types::RRSIG)).each {|sigs|
+      sig_rrsets = ret.answer.rrsets(Types::RRSIG) + ret.authority.rrsets(Types::RRSIG)
+      if (sig_rrsets.length == 0)
+        @controller.log(LOG_ERR, "(#{@nsname}): No signatures found for #{name}, #{type.string}")
+      end
+      (sig_rrsets).each {|sigs|
         sigs.each {|sig|
           check_sig_expiry(name, sig)
           check_sig_inception(name, sig)
