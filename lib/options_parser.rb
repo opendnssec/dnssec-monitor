@@ -93,35 +93,35 @@ module DnssecMonitor
 
         opts.on("--kskwarn [n]", "Warn if KSK RRSIG expiry is within n days",
           "Defaults to #{options.ksk_expire_warn}") do |n|
-          options.ksk_expire_warn = n.to_i
+          options.ksk_expire_warn = n.to_f
         end
 
         opts.on("--kskcritical [n]", "Error if KSK RRSIG expiry is within n days",
           "Defaults to #{options.ksk_expire_critical}") do |n|
-          options.ksk_expire_critical = n.to_i
+          options.ksk_expire_critical = n.to_f
         end
 
         opts.on("--zskwarn [n]", "Warn if the ZSK RRSIG expiry is within n days",
           "Defaults to #{options.zsk_expire_warn}") do |n|
-          options.zsk_expire_warn = n.to_i
+          options.zsk_expire_warn = n.to_f
         end
 
         opts.on("--zskcritical [n]", "Error if ZSK RRSIG expiry is within n days",
           "Defaults to #{options.zsk_expire_critical}") do |n|
-          options.zsk_expire_critical = n.to_i
+          options.zsk_expire_critical = n.to_f
         end
 
         opts.on("--dwarn [n]", "Warn if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_warn}",
           "Only useful when a list of domains", "to check is supplied") do |n|
-          options.domain_expire_warn = n.to_i
+          options.domain_expire_warn = n.to_f
         end
 
         opts.on("--dcritical [n]", "Error if RRSIG expiry is within n days",
           "Defaults to #{options.domain_expire_critical}",
           "Only useful when a list of domains to",
           "check is supplied") do |n|
-          options.domain_expire_critical = n.to_i
+          options.domain_expire_critical = n.to_f
         end
 
         opts.on("--ods [ods_location]", "Load the OpenDNSSEC configuration files",

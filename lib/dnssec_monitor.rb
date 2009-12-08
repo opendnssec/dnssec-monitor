@@ -651,7 +651,7 @@ module DnssecMonitor
     end
 
     def check_expire_with_keys(sig, keys, critical, warn)
-      days = (sig.expiration - Time.now.to_i) / (60 * 60 * 24)
+      days = (sig.expiration - Time.now.to_i).fdiv(60 * 60 * 24)
       keys.each {|k|
         if (sig.key_tag == k.key_tag)
           key_type = ""
@@ -952,7 +952,7 @@ module DnssecMonitor
     def check_sig_expiry(name, sig)
       warn = @options.domain_expire_warn
       critical = @options.domain_expire_critical
-      days = (sig.expiration - Time.now.to_i) / (60 * 60 * 24)
+      days = (sig.expiration - Time.now.to_i).fdiv(60 * 60 * 24)
       if (days < 0)
         @controller.log(LOG_ERR, "(#{@nsname}): RRSIG for #{name}, #{sig.type_covered} has expired")
       end
