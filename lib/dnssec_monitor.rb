@@ -964,10 +964,6 @@ module DnssecMonitor
       end
     end
 
-    def check_expire_zsk(sigs)
-      check_expire_with_keys(sigs, @zsks, @options.zsk_expire_critical,
-        @options.zsk_expire_warn)
-    end
   end
   class Daemon
     # Run the ZoneMonitor as a daemon
