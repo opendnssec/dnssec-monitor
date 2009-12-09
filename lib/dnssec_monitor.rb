@@ -138,16 +138,16 @@ module DnssecMonitor
     end
 
     def support_ipv6?
-      udp = UDPSocket.new(Socket::AF_INET6)
-      dns = DNS.new
       ipv6ok = false
-      dns.each_resource("k.root-servers.net", Types.AAAA) { |rr|
-        begin
+      begin
+        udp = UDPSocket.new(Socket::AF_INET6)
+        dns = DNS.new
+        dns.each_resource("k.root-servers.net", Types.AAAA) { |rr|
           udp.connect(rr.address.to_s, 53)
           ipv6ok = true
-        rescue Exception
-        end
-      }
+        }
+      rescue Exception
+      end
       return ipv6ok
     end
     def log(priority, message)
@@ -179,7 +179,7 @@ module DnssecMonitor
         exit(3)
       end
       threads = []
-      nameservers.each {|nameserver, nsname|
+      nameservers.each {|nsname, nameserver|
         thread = Thread.new() {
           monitor = ZoneMonitor.new(@options, nameserver, nsname, self, @name_list)
           monitor.check_zone
@@ -230,7 +230,7 @@ module DnssecMonitor
 
       nameservers = []
       msg.answer.rrsets(Types::NS).each {|rrset|
-        rrset.rrs.each {|rr| nameservers.push(rr.nsdname)}
+        rrset.rrs.each {|rr| nameservers.push(rr.nsdname) if (rr.name.to_s == zone.to_s)}
       }
       # Then build up the list of addresses for them
       ns_addrs = {}
@@ -248,7 +248,7 @@ module DnssecMonitor
                 if (rr.name == ns)
                   found = true
                   mutex.synchronize {
-                    ns_addrs[rr.address]=ns
+                    ns_addrs[ns]=rr.address
                   }
                 end
               }
@@ -259,7 +259,7 @@ module DnssecMonitor
                 rrset.rrs.each {|rr|
                   found = true
                   mutex.synchronize {
-                    ns_addrs[rr.address]=ns
+                    ns_addrs[ns]=rr.address
                   }
                 }
               }
@@ -728,7 +728,7 @@ module DnssecMonitor
       parent = get_parent_for(@zone)
       nss = @controller.get_nameservers(parent)
       nameservers = []
-      nss.each {|nameserver, nsname|
+      nss.each {|nsname, nameserver|
         nameservers.push(nameserver.to_s)
       }
       res = Resolver.new({:nameserver => nameservers})
