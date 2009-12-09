@@ -53,11 +53,15 @@ class TestMonitor < Test::Unit::TestCase
       packet, info = socket.recvfrom(4096)
       break if packet=="shutdown"
       query = Message.decode(packet)
-      #      print "Query : #{query}\n"
 
       answer = make_response(query)
 
-      socket.send(answer.encode, 0, info[3], info[1])
+      begin
+        socket.send(answer.encode, 0, info[3], info[1])
+      rescue Exception => e
+        print "ERROR Sending : #{answer}\n#{e}\n"
+        exit(1)
+      end
     end
 
     # Shut down
@@ -123,6 +127,13 @@ class TestMonitor < Test::Unit::TestCase
         return response
       elsif (query.question()[0].qtype == "DS")
         # Strip the first label, and what's left identifies the zone we're interested in.
+        if (["alex.example.com", "alexd.example.com"].include?query.question()[0].qname.to_s)
+          Dnsruby::TheLog.level = Logger::DEBUG
+          response = query.clone
+          query.header.qr = true
+          query.header.aa = true
+          return response
+        end
         zone = get_zone(lose_n_labels_from_start(query.question()[0].qname, 1))
         response  = make_ds_response(query, zone)
         return response
@@ -133,9 +144,15 @@ class TestMonitor < Test::Unit::TestCase
         return response
       elsif (query.question()[0].qtype == "RRSIG")
         # The query name identifies the zone we're interested in.
-        zone = get_zone(query.question()[0].qname)
-        response  = make_rrsig_response(query, zone)
-        return response
+        if (query.question()[0].qname.to_s.index"alex")
+          zone = @example_com_zone
+          response = make_domain_rrsig_response(query, zone)
+          return response
+        else
+          zone = get_zone(query.question()[0].qname)
+          response  = make_rrsig_response(query, zone)
+          return response
+        end
       elsif (query.question()[0].qtype == "SOA")
         # The query name identifies the zone we're interested in.
         zone = get_zone(query.question()[0].qname)
@@ -146,11 +163,10 @@ class TestMonitor < Test::Unit::TestCase
         zone = get_zone(query.question()[0].qname)
         response  = make_dnskey_response(query, zone)
         return response
-      else
-        print "\n\nCAN'T HANDLE QUERY FOR #{query.question()[0].qtype} : #{query}\n\n"
       end
     rescue ArgumentError => e
     end
+    print "\n\nCAN'T HANDLE QUERY FOR : #{query}\n\n"
     query.header.rcode = RCode.SERVFAIL
     return query
   end
@@ -273,6 +289,41 @@ class TestMonitor < Test::Unit::TestCase
     return response
   end
 
+  def make_domain_rrsig_response(query, zone)
+    # Need : record of interest + RRSIG in answer
+    # Authority should contain NS records for zone servers (+RRSIGs)
+    # Additional should contain A/AAAA records for the NS records (+RRSIGs)
+    response = query.clone
+    query.header.qr = true
+    query.header.aa = true
+    answer_rrsets = []
+    ns_rrsets = []
+    a_rrsets = []
+    zone.each {|rr|
+      # Load up the RRSets
+      # DS in answer, NS in authority, A in additional (remembering RRSIGs)
+      if rr.type == "RRSIG"
+        add_to_rrsets(rr, answer_rrsets)
+      end
+    }
+    answer_rrsets.each {|answer_rrset|
+      answer_rrset.each {|rr|
+        response.add_answer(rr)
+      }
+    }
+    ns_rrsets.each {|ns_rrset|
+      ns_rrset.each {|rr|
+        response.add_authority(rr)
+      }
+    }
+    a_rrsets.each {|a_rrset|
+      a_rrset.each {|rr|
+        response.add_additional(rr)
+      }
+    }
+    return response
+  end
+
   def make_rrsig_response(query, zone)
     # all RRSIGs in answer, with NS in authority and A in additional (remembering RRSIGs)
     response = query.clone
@@ -361,8 +412,8 @@ class TestMonitor < Test::Unit::TestCase
     a_rrsets = []
     zone.each {|rr|
       # Load up the RRSets
-      # DS in answer, NS in authority, A in additional (remembering RRSIGs)
-      if get_type(rr) == "NS"
+      # NS in answer, NS in authority, A in additional (remembering RRSIGs)
+      if ((get_type(rr) == "NS")) # && (rr.name.to_s == query.question()[0].qname.to_s))
         add_to_rrsets(rr, ns_rrsets)
       elsif get_type(rr) == "A" # No AAAA in test zones
         add_to_rrsets(rr, a_rrsets)
@@ -472,21 +523,8 @@ class TestMonitor < Test::Unit::TestCase
 
   def check_server_works
     res = Resolver.new({:nameserver => "127.0.0.1"})
-    #    begin
-    #      res.query("example.com.", "TXT")
-    #      fail
-    #    rescue ServFail => e
-    #    end
-    begin
-      res.query("example.com.not.there.", "DS")
-      fail
-    rescue ServFail => e
-    end
     ret =  res.query("example.com", "DS")
     assert(ret.answer.rrset("example.com", "DS").rrs.length > 0)
-    ret =  res.query("com", "NS")
-    assert(ret.answer.rrset("com", "NS").rrs.length == 0)
-    assert(ret.authority.rrset("com", "NS").rrs.length == 0)
     q = Queue.new
     res.send_async(Message.new("notthere.example.com", "NS"), q, q)
     id, ret, err = q.pop
@@ -500,7 +538,7 @@ class TestMonitor < Test::Unit::TestCase
 
   def test_dlv
     # DLV tests run against the live server, just to make sure there are some real-world tests.
-    options = " -z se --dlvkey ../test/dlv.key --kskwarn 1 --kskcritical 1 --zskwarn 1 --zskcritical 1 "
+    options = " -z se --dlvkey ../test/dlv.key --kskwarn 1 --kskcritical 1 --zskwarn 1 --zskcritical 1"
     time = Time.now
     run_monitor(options, time, 0)
     time = Time.gm(2009, 11, 23, 13, 0, 0)
@@ -510,42 +548,147 @@ class TestMonitor < Test::Unit::TestCase
 
   def run_tests
     check_server_works
-    options = " --rootkey ../test/root.key -z example.com --hints 127.0.0.1 --zskwarn 1 --zskcritical 1 --kskwarn 1 --kskcritical 1"
+    options = " --rootkey ../test/root.key -z example.com --hints 127.0.0.1 --zskwarn 1 --zskcritical 1 --kskwarn 1 --kskcritical 1 --names alexd,alex --dcritical 1 --dwarn 1"
 
     # Want a successful test
     time = Time.gm(2009, 11, 28, 13, 0, 0)
     output = run_monitor(options, time, 0)
+    # Check the output
+    assert(check_syslog(output, []))
 
 
     # Then set time to bad time, and check errors/warnings generated
     # Also, we should probably set up some validation failures - e.g. bad DS records, bad DNSKEY, etc.
-    # @TODO@ Check the syslog output - we just want to see the error messages we're expecting.
+    # Check the syslog output - we just want to see the error messages we're expecting.
 
-    # @TODO@ Test checks on individual domains (in example.com)
+    # Test checks on individual domains (in example.com)
     # Do these at same time as apex inception and expiration checks
 
-    # @TODO@ Check signature expiration
+    # Check signature expiration
     # Set time near end of validity for example.com RRSIGs
+    expected_strings = []
+    ["alexns.example", "alexdns.example"].each {|ns|
+      4.times { |x|
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com.	2678400	IN	DNSKEY	256 3 RSASHA1-NSEC3-SHA1 ( AwEAAfFF869A/FiM1z8LZdK1pEfMgQhp1Pzeg+jUAJiQECDkJwfoCOKbyZZ/n1KtUM8WdtTho6mPI99tKN9UctVh6XyuuklA6M2F2vgj7zB0zv1VeQNwx8kaSZmxhnV4L7XzVUZK9BLfLwj9XlSBSpPWfElN2Ih6bd8RENA0vfQsZ9vp ) ; key_tag=7877 will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com.	2678400	IN	DNSKEY	256 3 RSASHA1-NSEC3-SHA1 ( AwEAAfFF869A/FiM1z8LZdK1pEfMgQhp1Pzeg+jUAJiQECDkJwfoCOKbyZZ/n1KtUM8WdtTho6mPI99tKN9UctVh6XyuuklA6M2F2vgj7zB0zv1VeQNwx8kaSZmxhnV4L7XzVUZK9BLfLwj9XlSBSpPWfElN2Ih6bd8RENA0vfQsZ9vp ) ; key_tag=7877 will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com.	2678400	IN	DNSKEY	257 3 RSASHA1-NSEC3-SHA1 ( AwEAAclPAcnkTHj2XSQfe/A3l15IOwr9+cfy5BxE8fVt2sSipf/Q1noqGAEBJ/2FLM8o3TGdVPOvcWhpHnTqoZwTwKhoA040CvielB/6rOwfZalQUaAijQZ48W3q6O/3tugHTzzgmpN0gsblwJZWe3k8zr/Z5W13TUFFgNRgZr8Y/8AqTOIctZY0l5yUgoWFvx7UQf+RR87xebgIAFHTE3VDHsZzdge6hKoMfQxI9tlc2ezDyIZpojti1B18LiPuIp3FPPFaK76cTmAtqo0pqwpq/z0ZUmjnvH8pXRafPM734CHbry7NBpJO3R7Jxg5r0SR+wN7/kmZ2uWLS9I8U/mJpgg0= ) ; key_tag=18931 will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com.	2678400	IN	DNSKEY	257 3 RSASHA1-NSEC3-SHA1 ( AwEAAclPAcnkTHj2XSQfe/A3l15IOwr9+cfy5BxE8fVt2sSipf/Q1noqGAEBJ/2FLM8o3TGdVPOvcWhpHnTqoZwTwKhoA040CvielB/6rOwfZalQUaAijQZ48W3q6O/3tugHTzzgmpN0gsblwJZWe3k8zr/Z5W13TUFFgNRgZr8Y/8AqTOIctZY0l5yUgoWFvx7UQf+RR87xebgIAFHTE3VDHsZzdge6hKoMfQxI9tlc2ezDyIZpojti1B18LiPuIp3FPPFaK76cTmAtqo0pqwpq/z0ZUmjnvH8pXRafPM734CHbry7NBpJO3R7Jxg5r0SR+wN7/kmZ2uWLS9I8U/mJpgg0= ) ; key_tag=18931 will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, SOA will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, SOA will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, DNSKEY will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, DNSKEY will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, NSEC3PARAM will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, NSEC3PARAM will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, NSEC3 will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, NSEC3 will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, A will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, A will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, TXT will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, TXT will expire in 0.07")
 
-    # @TODO@ Check signature inception
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, SOA will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, SOA will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, DNSKEY will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, DNSKEY will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, NSEC3PARAM will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, NSEC3PARAM will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, NSEC3 will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, NSEC3 will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, A will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, A will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, TXT will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, TXT will expire in 0.07")
+      }
+    }
+    time = Time.gm(2009, 12, 02, 8, 0, 0)
+    output = run_monitor(options, time, 3)
+    assert(check_syslog(output, expected_strings))
+
+    # Check signature inception
     # Set time near start of validity for example.com RRSIGs
+    #    print "\nChecking near beginning of lifetime\n\n"
+    expected_strings = []
+    ["alexns.example", "alexdns.example"].each {|ns|
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, SOA has an inception time ")
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, DNSKEY has an inception time ")
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, NSEC3PARAM has an inception time ")
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, NSEC3 has an inception time ")
+
+      # These are only here on account of the hacky test server...
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, A has an inception time ")
+      expected_strings.push("3 : (#{ns}): RRSIG for example.com, TXT has an inception time ")
+
+      ["alex.example.com", "alexd.example.com"].each {|d|
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, A has an inception time ")
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, TXT has an inception time ")
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, DNSKEY has an inception time ")
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, SOA has an inception time ")
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, NSEC3 has an inception time ")
+        expected_strings.push("3 : (#{ns}): RRSIG for #{d}, NSEC3PARAM has an inception time ")
+      }
+    }
+    time = Time.gm(2009, 11, 27, 10, 0, 0)
+    output = run_monitor(options, time, 3)
+    assert(check_syslog(output, expected_strings))
 
     # @TODO@ Check parent DS incorrect
     # Perhaps we could set some flags so that the server serves up a corrupted DS record for example.com?
     # Also tests validation
   end
 
+  def check_syslog(remaining_strings, expected_strings)
+    remaining_strings.reverse.each {|line|
+      if ((line.length == 0) || (line[0,1] == "6") || (line=="\n"))
+        remaining_strings.delete(line)
+        next
+      end
+      expected_strings.reverse.each {|expected|
+        if (line.index(expected))
+          remaining_strings.delete_if {|l| l.index(expected)} # (line)
+          expected_strings.delete(expected)
+          break
+        end
+      }
+
+
+    }
+    success = true
+    expected_strings.each {|string|
+      print "Couldn't find expected error : #{string}\n"
+      success = false
+    }
+    remaining_strings.each {|line|
+      print "Got unexpected error : #{line}\n"
+      success= false
+    }
+    return success
+  end
+
   def run_monitor(options, time, expected_ret)
     # In a new process, require 'dnssec_monitor.rb" with appropriate config
     # Remember to do this with Timecop!
     output = []
-      IO.popen("ruby test/dnssec_monitor_time_shift.rb '#{time.to_i}' #{options}") {|fhi|
-        while (line = fhi.gets)
-          output.push(line)
-        end
-      }
+    IO.popen("ruby test/dnssec_monitor_time_shift.rb '#{time.to_i}' #{options}") {|fhi|
+      while (line = fhi.gets)
+        output.push(line)
+        #        print line
+      end
+    }
     ret_val = $?.exitstatus
-    assert_equal(expected_ret, ret_val, "Expected return of #{expected_ret} from successful monitor run")
+    if (expected_ret != 0)
+      assert_equal(expected_ret, ret_val, "Expected return of #{expected_ret} from successful monitor run\n")
+    end
+    output.each {|line|
+      if line.index("ns.example): No RRSIGS found in example.com, NS RRSet")
+        output.delete(line) 
+        #        print "Deleted NS RRSIGs error\n"
+        next
+      end
+      if (expected_ret == 0)
+        assert(!(line.index("3 :")), "Should have no errors")
+        assert(!(line.index("4 :")), "Should have no warnings")
+      end
+    }
     return output
   end
 end

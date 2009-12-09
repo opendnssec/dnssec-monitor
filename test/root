@@ -1,5 +1,9 @@
 ; Signed on 2009-11-27 10:18:16
 .	86400	IN	SOA	nic.com. hostmaster.com. 1259317096 7200 300 2419200 86400
+com.    86400   IN      NS      alex.com.
+com.    86400   IN      NS      alexd.com.
+alex.com. IN A 127.0.0.1
+alexd.com. IN A 127.0.0.1
 com.	3600	IN	DS	39195 7 1 a01bbba73806cd6c76246e9388790a1ef0398dca ; xomac-rivop-lavab-kyfek-satid-garyn-fidul-nydic-visif-nafus-poxax
 com.	3600	IN	DS	39195 7 2 eea48bc7fe1688be39d425f5d66c017a22c743a769464961a85e8d67aafbc266 ; xurip-gedis-lazuc-kydar-vyvet-ganyz-hohuk-subil-pymes-lebop-lepyg-kidyk-copih-vyfek-lopaz-robyk-kixax
 com.	3600	IN	RRSIG	DS 7 1 3600 20100702145823 20090826101816 64152 . HPJhfZwKO2W51igxR9n7zPIIUdSP8AlD66Fl14RMt9vXcD51+wMhmPKgUNG31WzQ/ZJ2z3rmQMx4XoVj0YRLRXybDzGJwR3Mag2aLNlMIZuD4eZhC3rUXAbZ/s9Z6CbqKe1Wy3Vj7lI8O5ENLHviiSvQ6ysi26dBZbNapPTuook= ;{id = 64152}
