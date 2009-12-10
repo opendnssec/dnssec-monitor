@@ -59,7 +59,7 @@ def process_log(options, output, syslog = nil)
     when 0..1
       # Print only the most critical error message
       # Keep record of the worst error level, and the shortest time remaining within that period
-      if (nagios_error > worst_nagios_error)
+      if (nagios_error >= worst_nagios_error)
         num_worst_errors = 0
         closest_to_expiry = get_expiry_from(nagios_message)
         worst_nagios_error = nagios_error
