@@ -34,19 +34,62 @@ viewed by running :
 Additional options include :
 
     -n <ns1>[,<ns2>,<ns3>,...]       Comma-separated list of nameservers
-                                     to monitor for the zone
-        --nameservers                Defaults to the nameservers listed
-                                     in the public DNS
-        --kskwarn [n]                Warn if KSK expiry is within n days
-        --kskcritical [n]            Error if KSK expiry is within n days
-        --zskwarn [n]                Warn if ZSK expiry is within n days
-        --zskcritical [n]            Error if ZSK expiry is within n days
-    -w, --wilcard                    NXDomain checks will be disabled if 
+        --nameservers                to monitor for the zone. Defaults
+                                     to the nameservers listed in the public DNS
+        --kskwarn [n]                Warn if KSK RRSIG expiry is within n days
+                                     Defaults to 14
+        --kskcritical [n]            Error if KSK RRSIG expiry is within n days
+                                     Defaults to 7
+        --zskwarn [n]                Warn if the ZSK RRSIG expiry is within n
+                                     days
+                                     Defaults to 3
+        --zskcritical [n]            Error if ZSK RRSIG expiry is within n days
+                                     Defaults to 1
+        --dwarn [n]                  Warn if RRSIG expiry is within n days
+                                     Defaults to 3
+                                     Only useful when a list of domains
+                                     to check is supplied
+        --dcritical [n]              Error if RRSIG expiry is within n days
+                                     Defaults to 1
+                                     Only useful when a list of domains to
+                                     check is supplied
+        --ods [ods_location]         Load the OpenDNSSEC configuration files
+                                     from this location and use values for
+                                     InceptionOffset and ValidityPeriod
+                                     from them. Otherwise, defaults will
+                                     be used for these (3600 for
+                                     InceptionOffset, 3600 for ValidityPeriod).
+                                     OpenDNSSEC must have been installed on this
+                                     system if this option is used
+        --[no-]wilcard               NXDomain checks will be disabled if
                                      wildcards are enabled
-    -d, --daemonize                  Run the dnssec monitor as a daemon
-                                     Currently unsupported
-    -l, --log [FACILITY]             Specify the syslog facility to print 
-                                     results
+        --names name1,name2,name3... List of names to check in the zone
+                                     Note that there must be no whitespace
+                                     between the names
+        --namefile file              Name of file containing list of names (and 
+                                     optional types) to check in the zone
+        --zonefile file              Name of zone file to load list of names to 
+                                     check against zone
+        --[no-]validation            Define whether to check parent DS records
+                                     and validation from the root
+                                     Defaults to true
+        --rootkey file               Configure the key for the signed root
+                                     Defines file to load root key from
+                                     Validation from root will not be tested
+                                     if this is not configured
+        --dlv                        Configure the location of the DLV service
+                                     Defaults to dlv.isc.org.
+                                     DLV will only be used if dlvkey is set
+        --dlvkey file                Configure the DLV key
+                                     Defines file to load DLV key from
+                                     DLV won't be used if this isn't set
+        --hints hint1,hint2,hint3... Configure the root hints
+                                     Defines the servers to use as root
+                                     Note that there must be no whitespace
+                                     between the names
+    -l, --log [FACILITY]             Specify the syslog facility for results
+                                     Defaults to print to console
+
 
 NAGIOS PLUG-IN
 --------------
@@ -66,15 +109,13 @@ Zone Apex Checks
    For these RRSIGs, the signature expiration is checked to ensure it is a certain amount from the current time.
    For these RRSIGs, the signature inception is checked to ensure it is a certain amount before the current time.
    For these RRSIGs, the signature lifetime (expiration - inception) is checked for a minimum level.
-   FUTURE VERSION : Check that at least one DNSKEY matches DS in parent zone (or in the ISC DLV registry)
+   Check that at least one DNSKEY matches DS in parent zone (or in the ISC DLV registry)
 
-In a future version, the inception/expiration tolerances may be obtained from the OpenDNSSEC configuration files, if available. Otherwise, command line options or defaults are used.
+The inception/expiration tolerances may be obtained from the OpenDNSSEC configuration files, if available. Otherwise, command line options or defaults are used.
 
-In a future version, it will be possible to specify a list of names (or a zone file) for which the RRSIGs should be checked as per the zone apex RRSIG checks.
+A list of names (or a zone file) may be specified, for which the RRSIGs should be checked as per the zone apex RRSIG checks. If found, DS records for the specified children are checked against the published children zones.
 
-In a future version, it will be possible to check the DS records against the published children zones.
-
-In a future version, it will be possible to validate the zone from the signed root (giving detailed diagnostics in case of failure).
+It is also possible to validate the zone from the signed root or ISC DLV registry.
 
 AUTHOR
 ------
