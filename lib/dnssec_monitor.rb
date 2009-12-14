@@ -973,8 +973,10 @@ module DnssecMonitor
   # Now actually do something!
   begin
     options = OptionsParser.parse(ARGV)
+  rescue OptionsParser::HelpExit
+    exit(0)
   rescue Exception => e
-    print "Eror reading options : #{e}\n"
+    print "Error reading options : #{e}\n"
     exit(3)
   end
   controller = Controller.new(options)

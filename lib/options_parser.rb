@@ -29,6 +29,9 @@ require 'dnsruby'
 
 module DnssecMonitor
   class OptionsParser
+      class HelpExit < Exception
+  end
+
     # Command-line interface
     # -z(one) : the zone to check
     # -n(ameservers) : comma-separated list of nameservers to check (rather than all for a zone)
@@ -101,7 +104,7 @@ module DnssecMonitor
           options.ksk_expire_critical = n.to_f
         end
 
-        opts.on("--zskwarn [n]", "Warn if the ZSK RRSIG expiry is within n days",
+        opts.on("--zskwarn [n]", "Warn if the ZSK RRSIG expiry is within n", "days",
           "Defaults to #{options.zsk_expire_warn}") do |n|
           options.zsk_expire_warn = n.to_f
         end
@@ -209,7 +212,7 @@ module DnssecMonitor
 
         # Syslog facility
         opts.on("-l", "--log [FACILITY]",
-          "Specify the syslog facility to print results",
+          "Specify the syslog facility for results",
           "Defaults to print to console") do |log|
           syslog_facility = eval "Syslog::LOG_" + (log.upcase+"").untaint
           options.syslog = syslog_facility
@@ -224,7 +227,7 @@ module DnssecMonitor
         # Try it and see!
         opts.on_tail("-h", "-?", "--help", "Show this message") do
           puts opts
-          exit
+          raise HelpExit.new
         end
 
       end
