@@ -8,8 +8,8 @@
 
 require 'optparse'
 require 'ostruct'
-require 'dnsruby'
 require 'rubygems'
+require 'dnsruby'
 include Dnsruby
 
 class RecursorOptionsParser
