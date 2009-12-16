@@ -87,7 +87,7 @@ def process_log(options, output, syslog = nil)
   when 0..1
     nagios_buffer = [worst_nagios_output].to_s.chomp
     if (num_worst_errors > 1)
-      " : #{num_worst_errors - 1} other issues at this level - run with -v 3 for details"
+      nagios_buffer += " : #{num_worst_errors - 1} other issues at this level - run with -v 3 for details"
     end
     nagios_buffer += "\n"
   when 2
