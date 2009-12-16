@@ -9,6 +9,7 @@
 require 'optparse'
 require 'ostruct'
 require 'dnsruby'
+require 'rubygems'
 include Dnsruby
 
 class RecursorOptionsParser
@@ -112,8 +113,7 @@ options.nameservers.each { |ns_addr|
         Thread.exit
       }
     end
-    #    print "#{ret}\n"
-    # @Collate the errors found
+    # Collate the errors found
     if ((ret.rcode != RCode.NOERROR) || (!ret.header.ad))
       Thread.exclusive {
         bad_answers.push([addr, port, ret])
