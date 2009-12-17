@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 # This NAGIOS plug-in uses external caching resolvers to continually check
 # that the target zone validates successfully using cached responses.
