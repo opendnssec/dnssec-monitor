@@ -1,6 +1,30 @@
 #!/usr/bin/env ruby
 
-# This NAGIOS plug-in uses external caching resolvers to continually check
+# Copyright (c) 2009 Nominet UK. All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+# IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+# WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+# ARE DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+# DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE
+# GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER
+# IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+# OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN
+# IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+## This NAGIOS plug-in uses external caching resolvers to continually check
 # that the target zone validates successfully using cached responses.
 # For example, it could use a BIND and an Unbound instance (configured with
 # the root or DLV keys) to check that a caching resolver on the internet will
@@ -27,7 +51,7 @@ class RecursorOptionsParser
       opts.banner = "Usage: #{$0} [options]"
 
       # zone_name
-      opts.on("-z", "--zone [ZONE_NAME]",
+      opts.on("-z", "--zone <ZONE_NAME>",
         "Zone to monitor") do |zone|
         options.zone = Dnsruby::Name.create(zone)
       end
@@ -82,7 +106,7 @@ end
 
 options = RecursorOptionsParser.parse(ARGV)
 if (options.nameservers.length == 0)
-  print "RECURSOR_CRTICAL: No nameservers specified for checks\n"
+  print "RECURSOR CRTICAL: No nameservers specified for checks\n"
   exit(3)
 end
 if (!options.zone)
@@ -143,7 +167,7 @@ if (bad_answers.length > 0)
     addr, port, ret = array
 
     print "RECURSOR CRITICAL: UNVALIDATED ANSWER FROM #{addr}:#{port}\n" # #{(options.nagios_verbosity > 2) ? ret : ""}\n"
-    if (options.nagios_verbosity == 1)
+    if ([0,1].include?options.nagios_verbosity)
       exit(3)
     end
   }
@@ -152,7 +176,7 @@ end
 errors.each {|array|
   addr, port, exception = array
   print "RECURSOR WARNING: ERROR COMMUNICATING WITH #{addr}:#{port} : #{exception}\n"
-    if (options.nagios_verbosity == 1)
+    if ([0,1].include?options.nagios_verbosity)
       exit(4)
     end
 }
