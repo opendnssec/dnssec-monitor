@@ -75,7 +75,7 @@ class RecursorOptionsParser
       end
 
       opts.on("-v", "--verbose [n]", "Set the NAGIOS verbosity level to n",
-        "Defaults to 0 (single line, minimal output, if -v not used",
+        "Defaults to 0 (single line, minimal output) if -v not used",
         "defaults to 3 (Detailed output) if -v used with no number") do |n|
         options.nagios_verbosity = (n || 3).to_i
       end

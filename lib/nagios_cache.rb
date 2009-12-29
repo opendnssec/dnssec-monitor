@@ -30,12 +30,18 @@
 # The resolver is primed with the historical cache for each test in turn.
 # Each test then removes selected RRSets from the cache, before checking
 # that the resolver still correctly validates the target zone.
+#
+# NB : This program expects to be run on the same machine as a dedicated
+# instance of Unbound (www.unbound.net), which has been set up with the
+# control facility unbound-control.
 
 require 'optparse'
 require 'ostruct'
 require 'rubygems'
 require 'dnsruby'
 include Dnsruby
+
+CACHE_FILE = "/var/tmp/cache.old"
 
 
 class CacheCheckerOptionsParser
@@ -170,7 +176,7 @@ def dump_cache(res, options)
   send_query(res, options)
   # And then store the cache
   s = get_unbound_command_start(options)
-  s += "dump_cache > cache.old 2> /dev/null"
+  s += "dump_cache > #{CACHE_FILE} 2> /dev/null"
   system s # "unbound-control dump_cache > cache.old"
   #  print "Cache dumped\n"
 end
@@ -203,8 +209,8 @@ tests = {"ZSK Rollover : neither DNSKEY nor RRSIG records in cache" => [Types.DN
   "KSK Rollover : DNSKEY but no DS records in cache" => [Types.DS]
 }
 # Check if cache.old exists - if it doesn't, then quickly create it
-if (File.exist?("cache.old"))
-  File.delete("cache.old")
+if (File.exist?("#{CACHE_FILE}"))
+  File.delete("#{CACHE_FILE}")
 end
 dump_cache(res, options)
 #print "Starting tests\n"
@@ -218,7 +224,7 @@ tests.each {|test, rrs_to_wipe|
   s = get_unbound_command_start(options)
   s += "load_cache "
   # Need to do this in a separate process, and ignore the "ok" response
-  IO.popen("#{s} < cache.old") {|fhi|
+  IO.popen("#{s} < #{CACHE_FILE}") {|fhi|
     while (line = fhi.gets) # Ignore the output
       #    output.push(line)
     end
