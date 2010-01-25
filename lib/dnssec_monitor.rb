@@ -222,6 +222,10 @@ module DnssecMonitor
       end
 
       ret = recursor.query(zone, Types::SOA)
+      if (!ret)
+        log(LOG_ERR, "Can't find SOA for #{zone}")
+        exit(3)
+      end
       ret.each_resource() { |rr|
         if ((rr.type == Types::SOA) && (rr.name.to_s != zone.to_s ))
           log(LOG_ERR, "SOA name reported from #{recursor} is #{rr.name}, but should be #{zone}")
