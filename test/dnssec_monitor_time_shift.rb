@@ -1,5 +1,9 @@
-require 'rubygems'
-require 'timecop'
+begin
+  require 'timecop'
+rescue LoadError
+  require 'rubygems'
+  require 'timecop'
+end
 
 # This file wraps dnssec_monitor.rb, allowing the test script to call the monitor
 # in a new process, whilst setting the time that the monitor should think it is

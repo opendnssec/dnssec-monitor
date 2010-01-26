@@ -28,8 +28,12 @@
 # Based on the Perl dnssec_monitor project from IIS (se.) :
 # That project : Copyright (c) 2006 .SE (The Internet Infrastructure Foundation).
 
-require 'rubygems'
-require 'dnsruby'
+begin
+  require 'dnsruby'
+rescue LoadError
+  require 'rubygems'
+  require 'dnsruby'
+end
 include Dnsruby
 require 'syslog'
 include Syslog::Constants

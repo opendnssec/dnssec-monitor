@@ -31,7 +31,6 @@
 # Format errors according to Nagios convention
 
 require 'syslog'
-require 'rubygems'
 include Syslog::Constants
 require 'options_parser.rb'
 EXPIRY_MAX = 99999

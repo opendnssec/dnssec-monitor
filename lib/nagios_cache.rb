@@ -37,8 +37,12 @@
 
 require 'optparse'
 require 'ostruct'
-require 'rubygems'
-require 'dnsruby'
+begin
+  require 'dnsruby'
+rescue LoadError
+  require 'rubygems'
+  require 'dnsruby'
+end
 include Dnsruby
 
 CACHE_FILE = "/var/tmp/cache.old"
