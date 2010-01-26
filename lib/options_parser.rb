@@ -25,7 +25,12 @@
 
 require 'optparse'
 require 'ostruct'
+begin
 require 'dnsruby'
+rescue LoadError
+  require 'rubygems'
+  require 'dnsruby'
+end
 
 module DnssecMonitor
   class OptionsParser
