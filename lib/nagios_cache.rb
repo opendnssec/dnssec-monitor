@@ -152,7 +152,7 @@ def send_query(res, options)
     return nil
   rescue Exception => e
     print "CACHECHECKER CRITICAL: Error sending validation query : #{e}\n"
-    exit(3)
+    exit(2)
   end
 end
 
@@ -268,7 +268,7 @@ errors.each {|test, error|
   # and error code to Nagios.
   print "CACHECHECKER CRITICAL: Failed test for #{test} : #{error}\n"
   if ([0,1].include?options.verbosity)
-    exit(3)
+    exit(2)
   end
 }
-exit(3)
+exit(2)

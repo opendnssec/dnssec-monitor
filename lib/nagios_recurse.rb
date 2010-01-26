@@ -172,7 +172,7 @@ if (bad_answers.length > 0)
 
     print "RECURSOR CRITICAL: UNVALIDATED ANSWER FROM #{addr}:#{port}\n" # #{(options.nagios_verbosity > 2) ? ret : ""}\n"
     if ([0,1].include?options.nagios_verbosity)
-      exit(3)
+      exit(2)
     end
   }
 end
@@ -181,7 +181,7 @@ errors.each {|array|
   addr, port, exception = array
   print "RECURSOR WARNING: ERROR COMMUNICATING WITH #{addr}:#{port} : #{exception}\n"
     if ([0,1].include?options.nagios_verbosity)
-      exit(4)
+      exit(2)
     end
 }
-exit(3)
+exit(2)
