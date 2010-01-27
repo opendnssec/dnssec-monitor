@@ -26,7 +26,7 @@
 require 'optparse'
 require 'ostruct'
 begin
-require 'dnsruby'
+  require 'dnsruby'
 rescue LoadError
   require 'rubygems'
   require 'dnsruby'
@@ -34,8 +34,8 @@ end
 
 module DnssecMonitor
   class OptionsParser
-      class HelpExit < Exception
-  end
+    class HelpExit < Exception
+    end
 
     # Command-line interface
     # -z(one) : the zone to check
@@ -141,6 +141,12 @@ module DnssecMonitor
           "OpenDNSSEC must have been installed on this",
           "system if this option is used") do |location|
           options.opendnssec = location
+        end
+
+        opts.on("--inceptionoffset [n]", "Use this as the InceptionOffset.",
+          "This will be overridden if you",
+          "also specify the ODS location.", "Defaults to one hour.") do |io|
+          options.inception_offset = io.to_i
         end
 
         opts.on("--[no-]wilcard",
