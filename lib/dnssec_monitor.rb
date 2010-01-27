@@ -46,8 +46,6 @@ require 'options_parser.rb'
 
 module DnssecMonitor
   class Controller
-    class LoadOpenDnssecError < Exception
-    end
     # Control a set of ZoneMonitors to do the right thing
     def initialize(options)
       @ret_val = 999
@@ -131,12 +129,14 @@ module DnssecMonitor
           inception_offset, min_sig_lifetime = conf_loader.load_opendnssec_config(@options, self)
           if (!inception_offset)
             log(LOG_ERR, "Cannot find the OpenDNSSEC installation in #{@options.opendnssec}")
+            exit(3)
           else # override the default values
             @options.inception_offset = inception_offset
             @options.min_sig_lifetime = min_sig_lifetime
           end
         rescue Exception => e
-          log(LOG_WARNING, "Can't load OpenDNSSEC configuration : #{e}")
+          log(LOG_ERR, "Can't load OpenDNSSEC configuration : #{e}")
+          exit(3)
         end
       end
     end
@@ -286,6 +286,9 @@ module DnssecMonitor
   #This class loads the OpenDNSSEC configuration files to obtain values which
   #will be used by the Monitor as thresholds for warnings
   class OpenDnssecConfigLoader # :nodoc: all
+    class LoadOpenDnssecError < Exception
+    end
+
     # This class loads and stores the Signatures element of the kasp.xml policy
     class Signatures # :nodoc: all
       attr_accessor :resign, :refresh, :jitter, :inception_offset, :validity
