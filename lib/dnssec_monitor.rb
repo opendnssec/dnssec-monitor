@@ -174,9 +174,13 @@ module DnssecMonitor
     end
     def check_zone()
       @ret_val = 999
-      nameservers = @options.nameservers
-      if (!nameservers)
+      nameservers = {}
+      if (!@options.nameservers)
         nameservers = get_nameservers(@options.zone)
+      else
+      @options.nameservers.each {|ns|
+       nameservers[ns] = ns
+      }
       end
       if (nameservers.length == 0)
         log(LOG_ERR, "Can't find authoritative nameservers for #{@options.zone}")
