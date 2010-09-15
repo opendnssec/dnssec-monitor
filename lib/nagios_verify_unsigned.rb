@@ -50,6 +50,7 @@ class VerifyOptionsParser
     options.nameserver_unsigned = []
     options.nameserver_signed = []
     options.nagios_verbosity    = 3
+    options.tsig_key = nil
 
     opts = OptionParser.new do |opts|
       opts.banner = "Usage: #{$0} [options]"
@@ -75,6 +76,38 @@ class VerifyOptionsParser
         else
           options.nameserver_unsigned = ([list[0], list[1].to_i])
         end
+      end
+
+      opts.on("-k", "--key <key>", String,
+        "Sets the TSIG key for the nameserver",
+        "serving the unsigned zone.",
+        "Expects the name of a file which",
+        "holds the TSIG key",
+        "e.g. -k key_file") do |filename|
+        # Load the TSIG key!!!
+        # form : key <name> { algorithm <alg>; secret "<secret>"; };
+        key_string = ""
+        File.open((filename+"").untaint, 'r') {|file|
+          while (line = file.gets)
+            key_string += line.chomp + " "
+          end
+        }
+        split = key_string.split
+        if ((split[0] != "key") || (split[3] != "algorithm") ||
+              (split[5] != "secret") || (split[7] != "};"))
+          print "VERIFY CRITICAL: Can't read key file #{filename}\n"
+          exit(3);
+        end
+        name = split[1].chomp(";")
+        alg = split[4].chomp(";")
+        key_string = split[6].chomp(";")
+        key_string.delete!('"')
+#        print "Creating TSIG key : #{name}, #{alg}, #{key_string}\n"
+
+        options.tsig_key = [name, key_string]
+
+#        print "TSIG: #{options.tsig_key}\n"
+
       end
 
       opts.on("-s", "--signed <ns1>[,<port>]", Array,
@@ -151,6 +184,10 @@ begin
   zt.transfer_type = Dnsruby::Types.AXFR
   zt.server = addr
   zt.port = port
+  if (options.tsig_key)
+    # Add in the TSIG key for the unsigned nameserver
+    zt.tsig = options.tsig_key
+  end
   unsigned_zone = zt.transfer(options.zone)
 rescue Dnsruby::ResolvError => e
   print "VERIFY CRITICAL: Can't transfer unsigned zone\n"
@@ -191,9 +228,11 @@ unsigned_zone.each {|unsigned_rr|
 }
 signed_zone.each {|signed_rr|
   # Additional signed RR! Check that it is a DNSSEC record
-  if !([Types::DNSKEY, Types::RRSIG, Types::NSEC, Types::NSEC3, Types::NSEC3PARAM].include?signed_rr)
+  if !([Types::DNSKEY, Types::RRSIG, Types::NSEC, Types::NSEC3, Types::NSEC3PARAM].include?signed_rr.type)
     # If not, then raise the alarm
     extra_signed.push(signed_rr)
+  else
+    signed_zone.delete(signed_rr)
   end
 }
 
@@ -202,8 +241,8 @@ extra_signed.each {|rr|
   if (rr.type == Types::SOA)
     # Deal with the SOA record - compare it against the unsigned_soa
     if ((unsigned_soa.mname == rr.mname) && (unsigned_soa.rname == rr.rname) &&
-        (unsigned_soa.refresh == rr.refresh) && (unsigned_soa.retry == rr.retry) &&
-        (unsigned_soa.expire == rr.expire) && (unsigned_soa.minimum == rr.minimum))
+          (unsigned_soa.refresh == rr.refresh) && (unsigned_soa.retry == rr.retry) &&
+          (unsigned_soa.expire == rr.expire) && (unsigned_soa.minimum == rr.minimum))
       # SOA is OK - remove it from the extra
       extra_signed.delete(rr)
     end
