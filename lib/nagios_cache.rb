@@ -46,6 +46,7 @@ end
 include Dnsruby
 
 CACHE_FILE = "/var/tmp/cache.old"
+LOCK_FILE = "/var/tmp/cache.lock"
 
 
 class CacheCheckerOptionsParser
@@ -152,6 +153,7 @@ def send_query(res, options)
     return nil
   rescue Exception => e
     print "CACHECHECKER CRITICAL: Error sending validation query : #{e}\n"
+    unlock
     exit(2)
   end
 end
@@ -163,6 +165,20 @@ def get_unbound_command_start(options)
     s += "-c #{options.config} "
   end
   return s
+end
+
+def sort_locks
+  # Check the lock file - if it's there then exit critical
+  if (File.exist?LOCK_FILE)
+    print "CACHECHECKER CRTICAL: Lock-file (#{LOCK_FILE}) present from other process\n"
+    exit(3)
+  end
+  # Create the lock file
+  File.open(LOCK_FILE, "w") {}
+end
+
+def unlock
+  File.delete(LOCK_FILE)
 end
 
 def send_unbound(msg, options)
@@ -198,6 +214,7 @@ if (!options.name_and_type_to_check)
   print "CACHECHECKER CRITICAL: No name and type to check\n"
   exit(3)
 end
+sort_locks
 # Create the Resolver object from options.nameserver
 addr, port = options.nameserver
 #print "Making resolver\n"
@@ -213,8 +230,14 @@ tests = {"ZSK Rollover : neither DNSKEY nor RRSIG records in cache" => [Types.DN
   "KSK Rollover : DNSKEY but no DS records in cache" => [Types.DS]
 }
 # Check if cache.old exists - if it doesn't, then quickly create it
+begin
 if (File.exist?("#{CACHE_FILE}"))
   File.delete("#{CACHE_FILE}")
+end
+rescue Error => e
+  unlock
+  print "CACHECHECKER CRITICAL: Can't delete cache file #{CACHE_FILE}\n"
+  exit(3)
 end
 dump_cache(res, options)
 #print "Starting tests\n"
@@ -240,7 +263,7 @@ tests.each {|test, rrs_to_wipe|
   end
 
   # Then, delete the RRSets we want to delete
-#    print "Setting up for : #{test}\n"
+  #    print "Setting up for : #{test}\n"
   rrs_to_wipe.each { |type|
     if (type == Types.RRSIG)
       # We want to wipe the RRSIG for a specific name and type.
@@ -251,7 +274,7 @@ tests.each {|test, rrs_to_wipe|
       send_unbound("flush_type #{options.zone} #{type.string}", options)
     end
   }
-#  system "unbound-control dump_cache"
+  #  system "unbound-control dump_cache"
   # Then, send the validation query
   error = send_query(res, options)
   # And collect any errors
@@ -259,6 +282,7 @@ tests.each {|test, rrs_to_wipe|
   count += 1
 }
 dump_cache(res, options)
+unlock
 if (errors.length == 0)
   print "CACHECHECKER OK: All rollover scenarios checked\n"
   exit(0)
