@@ -178,9 +178,9 @@ module DnssecMonitor
       if (!@options.nameservers)
         nameservers = get_nameservers(@options.zone)
       else
-      @options.nameservers.each {|ns|
-       nameservers[ns] = ns
-      }
+        @options.nameservers.each {|ns|
+          nameservers[ns] = ns
+        }
       end
       if (nameservers.length == 0)
         log(LOG_ERR, "Can't find authoritative nameservers for #{@options.zone}")
@@ -583,15 +583,20 @@ module DnssecMonitor
         }
       }
       if (@ksks.length == 0)
-        @controller.log(LOG_ERR, "(#{@nsname}): No KSKs found in the zone")
+        if (!@options.csk)
+          @controller.log(LOG_ERR, "(#{@nsname}): No KSKs found in the zone")
+        end
       end
       if (@zsks.length == 0)
         @controller.log(LOG_ERR, "(#{@nsname}): No ZSKs found in the zone")
       end
       ret.answer.rrsets(Types.DNSKEY).each {|rrset|
         # Verify with both ZSKs and KSKs
-        verify_rrset(rrset, @ksks)
-        #        verify_rrset(rrset, @zsks)
+        if (@options.csk)
+          verify_rrset(rrset, @zsks)
+        else
+          verify_rrset(rrset, @ksks)
+        end
       }
     end
 

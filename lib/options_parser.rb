@@ -80,6 +80,7 @@ module DnssecMonitor
       options.min_sig_lifetime = 3600
       options.do_validation_checks = true
       options.dlv = "dlv.isc.org."
+      options.csk = false
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -204,6 +205,10 @@ module DnssecMonitor
           options.hints = nss
         end
 
+        opts.on("--csk", "Define that a Combined Signing Key is used",
+          "instead of a KSK/ZSK split", "Defaults to #{options.csk}") do |on|
+          options.csk = on
+        end
 
         if (support_nagios) # Running nagios_dnssec.rb
           opts.on("-v", "--verbose [n]", "Set the NAGIOS verbosity level to n",
