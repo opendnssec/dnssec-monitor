@@ -759,16 +759,10 @@ module DnssecMonitor
       # Find the parent
       parent = get_parent_for(@zone)
       nameservers = []
-      if (!@options.nameservers)
-        nss = @controller.get_nameservers(parent)
+        nss = @controller.get_nameservers(@zone) # parent)
         nss.each {|nsname, nameserver|
           nameservers.push(nameserver.to_s)
         }
-      else
-        @options.nameservers.each {|ns|
-          nameservers.push(ns)
-        }
-      end
       res = Resolver.new({:nameserver => nameservers})
       # Then look up the DS record for the child
       begin
@@ -790,6 +784,13 @@ module DnssecMonitor
           end
         end
       end
+      if (@options.nameservers)
+        nameservers=[]
+        @options.nameservers.each {|ns|
+          nameservers.push(ns)
+        }
+      end
+      res = Resolver.new({:nameserver => nameservers})
       # Get the DNSKEYs for the target zone
       key_response = query(@zone, Types.DNSKEY, res)
       key_rrset = key_response.answer.rrset(@zone, "DNSKEY")
@@ -808,8 +809,17 @@ module DnssecMonitor
 
     def check_validation_from_root
       failed = true
+      Dnsruby::PacketSender.clear_caches
       query = Message.new(@zone, Types.DNSKEY)
-      msg = @res.send_message(query)
+      res = @res
+      if (@options.nameservers)
+        nameservers=[]
+        @options.nameservers.each {|ns|
+          nameservers.push(ns)
+        }
+      end
+      res = Resolver.new({:nameserver => nameservers})
+      msg = res.send_message(query)
       begin
         @verifier.validate(msg, query)
       rescue VerifyError => e
@@ -905,14 +915,12 @@ module DnssecMonitor
       end
       if (ret.answer.rrsets(Types::DS).length > 0)
         ns_addrs = []
-        if (!@options.nameservers)
-          ns_addrs = get_nameservers(name)
-        else
+        ns_addrs = get_nameservers(name)
+        if (@options.nameservers)
           @options.nameservers.each {|ns|
             ns_addrs.push(ns)
           }
         end
-        #        ns_addrs = get_nameservers_for_child(name)
         return if !ns_addrs
         ns_addr_strs = ns_addrs.map{|n| n.to_s}
         # Now get the DNSKEYs for the child zone
