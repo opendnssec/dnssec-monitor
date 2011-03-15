@@ -430,8 +430,8 @@ module DnssecMonitor
       # Now load the namefile or zonefile, if appropriate
       if (@options.name_list)
         # Do nothing - this overrides files
-        @options.name_list.each {|name|
-          yield name, nil
+        @options.name_list.each {|name, types|
+          yield name, types
         }
       elsif (@options.zonefile)
         load_zonefile(@options, &block)
@@ -532,7 +532,7 @@ module DnssecMonitor
         name_loader = NameLoader.new(@controller, @options)
 
         name_loader.each_name {|domain, types|
-          if (types.length == 0)
+          if (!types || types.length == 0)
             # Check something here...
             check_domain(domain)
           else
