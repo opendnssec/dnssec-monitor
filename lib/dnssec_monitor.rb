@@ -56,8 +56,6 @@ module DnssecMonitor
         log(LOG_ERR, "No zone name specified")
         exit(1)
       end
-      name_loader = NameLoader.new
-      @name_list = name_loader.load_names(@options)
       @ipv6ok = support_ipv6?
       if (!@ipv6ok)
         log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
@@ -154,6 +152,7 @@ module DnssecMonitor
       end
       return ipv6ok
     end
+
     def log(priority, message)
       # Maintain the current max syslog error level
       if ((priority.to_i < @ret_val) && (priority <= LOG_WARNING))
@@ -189,7 +188,7 @@ module DnssecMonitor
       threads = []
       nameservers.each {|nsname, nameserver|
         thread = Thread.new() {
-          monitor = ZoneMonitor.new(@options, nameserver, nsname, self, @name_list)
+          monitor = ZoneMonitor.new(@options, nameserver, nsname, self)
           monitor.check_zone
         }
         threads.push(thread)
@@ -421,17 +420,23 @@ module DnssecMonitor
   end
 
   class NameLoader
+    def initialize(controller, options)
+      @controller = controller
+      @options = options
+    end
     # Load the list of domains in the zone (or a zonefile)
-    def load_names(options)
+    def each_name(&block)
       name_list = nil
       # Now load the namefile or zonefile, if appropriate
-      if (options.name_list)
+      if (@options.name_list)
         # Do nothing - this overrides files
-        name_list = options.name_list
-      elsif (options.zonefile)
-        name_list = load_zonefile(options)
-      elsif (options.namefile)
-        name_list = load_namefile(options)
+        @options.name_list.each {|name|
+          yield name, nil
+        }
+      elsif (@options.zonefile)
+        load_zonefile(@options, &block)
+      elsif (@options.namefile)
+        load_namefile(@options, &block)
       else
         # @TODO@ Load the zone names by walking the zone?
         # Should this be an explicit option?
@@ -439,14 +444,13 @@ module DnssecMonitor
         #        name_list = walk_zone(options)
         #      end
       end
-      return name_list
     end
 
     def load_namefile(options)
       name_list = nil
       # Load the namefile into the name_list
       if (!File.exist?options.namefile)
-        log(LOG_ERR, "Name file #{options.namefile} does not exist")
+        @controller.log(LOG_ERR, "Name file #{options.namefile} does not exist")
       else
         name_list = {}
         line_num = 0
@@ -460,19 +464,20 @@ module DnssecMonitor
             (split.length-1).times {|i|
               name_list[name].push(Types.new(split[i+1]))
             }
+            yield name, name_list[name]
           rescue Exception => e
-            log(LOG_ERR, "Can't understand line #{line_num} of #{options.namefile} : #{line}")
+            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{options.namefile} : #{line}")
           end
         }
       end
-      return name_list
+      #      return name_list
     end
 
     def load_zonefile(options)
       name_list = nil
       # Load the zonefile into the name_list
       if (!File.exist?options.zonefile)
-        log(LOG_ERR, "Zone file #{options.zonefile} does not exist")
+        @controller.log(LOG_ERR, "Zone file #{options.zonefile} does not exist")
       else
         name_list = {}
         zone_reader = Dnsruby::ZoneReader.new(options.zone)
@@ -480,21 +485,27 @@ module DnssecMonitor
         IO.foreach(options.zonefile) {|line|
           line_num += 1
           begin
-            rr = zone_reader.process(line)
-            name_list[rr.name] = rr.type
+            ret = zone_reader.process_line(line)
+            next if !ret
+            rr = RR.create(ret)
+            if !(name_list[rr.name])
+              name_list[rr.name] = []
+            end
+            name_list[rr.name].push(rr.type)
+            yield rr.name, [rr.type]
           rescue Exception => e
-            log(LOG_ERR, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
+            @controller.log(LOG_ERR, e)
+            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
           end
         }
       end
-      return name_list
+      #      return name_list
     end
   end
 
   class ZoneMonitor
-    def initialize(options, nameserver, nsname,  controller, name_list)
+    def initialize(options, nameserver, nsname,  controller)
       @zone = options.zone
-      @name_list = name_list
       @options = options
       @nameserver = nameserver
       @nsname = nsname
@@ -518,18 +529,18 @@ module DnssecMonitor
           check_parent_ds
           check_validation_from_root
         end
-        if (@name_list)
-          @name_list.each {|domain, types|
-            if (types.length == 0)
-              # Check something here...
-              check_domain(domain)
-            else
-              types.each {|type|
-                check_domain(domain, type)
-              }
-            end
-          }
-        end
+        name_loader = NameLoader.new(@controller, @options)
+
+        name_loader.each_name {|domain, types|
+          if (types.length == 0)
+            # Check something here...
+            check_domain(domain)
+          else
+            types.each {|type|
+              check_domain(domain, type)
+            }
+          end
+        }
         #      return error
         @controller.log(LOG_INFO, "Finished checking on #{@nsname}(#{@nameserver})")
       rescue ResolvTimeout => e
@@ -681,13 +692,13 @@ module DnssecMonitor
             key_type = "ZSK"
           end
           if (days < 0)
-            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} has expired")
+            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} has expired")
           end
           if (critical && (days <= critical))
-            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
+            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
           end
           if (warn && (days <= warn))
-            @controller.log(LOG_WARNING, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
+            @controller.log(LOG_WARNING, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
           end
         end
       }
@@ -829,7 +840,7 @@ module DnssecMonitor
       begin
         msg = @res.query(zone, "NS")
       rescue Exception => e
-        log(LOG_ERR, "(#{@nsname}): Can't find authoritative servers for #{zone} : #{e}")
+        @controller.log(LOG_ERR, "(#{@nsname}): Can't find authoritative servers for #{zone} : #{e}")
         return false
       end
 
@@ -909,7 +920,7 @@ module DnssecMonitor
                 key_rrset.rrs.each {|key|
                   if (key.key_tag == ds.key_tag)
                     if (!key.sep_key?)
-                      log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
+                      @controller.log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
                     end
                   end
                 }
