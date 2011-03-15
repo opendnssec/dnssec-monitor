@@ -251,13 +251,13 @@ module DnssecMonitor
       if (!support_nagios)
         if (options.ksk_expire_warn < options.ksk_expire_critical)
           print "--kskcritical (#{options.ksk_expire_critical}) is greater than --kskwarn (#{options.ksk_expire_warn}) " +
-            ": changing --kskcritical to be #{options.ksk_expire_warn}\n"
-          options.ksk_expire_critical = options.ksk_expire_warn
+            ": changing --kskwarn to be #{options.ksk_expire_critical}\n"
+          options.ksk_expire_warn = options.ksk_expire_critical
         end
         if (options.zsk_expire_warn < options.zsk_expire_critical)
           print "--zskcritical (#{options.zsk_expire_critical}) is greater than --zskwarn (#{options.zsk_expire_warn}) " +
-            ": changing --zskcritical to be #{options.zsk_expire_warn}\n"
-          options.zsk_expire_critical = options.zsk_expire_warn
+            ": changing --zskwarn to be #{options.zsk_expire_critical}\n"
+          options.zsk_expire_warn = options.zsk_expire_critical
         end
       end
       options
