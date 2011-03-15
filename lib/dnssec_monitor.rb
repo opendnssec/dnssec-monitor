@@ -934,7 +934,7 @@ module DnssecMonitor
                 # Now check that the DNSKEY with the DS key tag has the SEP flag set
                 key_rrset.rrs.each {|key|
                   if (key.key_tag == ds.key_tag)
-                    if (!key.sep_key?)
+                    if (!key.sep_key? && !@options.csk)
                       @controller.log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
                     end
                   end
@@ -954,8 +954,9 @@ module DnssecMonitor
       if (!Name.create(name).absolute?)
         name = name.to_s + "." + @zone.to_s
       end
-      check_sigs(name, type)
-      check_child_ds(name)
+      if (check_sigs(name, type))
+        check_child_ds(name)
+      end
     end
 
     # Check the RRSIG expiry, etc. for a specific domain
