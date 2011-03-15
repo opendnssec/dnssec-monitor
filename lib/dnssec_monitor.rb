@@ -488,6 +488,7 @@ module DnssecMonitor
             ret = zone_reader.process_line(line)
             next if !ret
             rr = RR.create(ret)
+            next if rr.type == Types::NSEC3 # Don't query for NSEC3 records!
             if !(name_list[rr.name])
               name_list[rr.name] = []
             end
@@ -903,7 +904,15 @@ module DnssecMonitor
         return false
       end
       if (ret.answer.rrsets(Types::DS).length > 0)
-        ns_addrs = get_nameservers_for_child(name)
+        ns_addrs = []
+        if (!@options.nameservers)
+          ns_addrs = get_nameservers(name)
+        else
+          @options.nameservers.each {|ns|
+            ns_addrs.push(ns)
+          }
+        end
+        #        ns_addrs = get_nameservers_for_child(name)
         return if !ns_addrs
         ns_addr_strs = ns_addrs.map{|n| n.to_s}
         # Now get the DNSKEYs for the child zone
@@ -954,7 +963,7 @@ module DnssecMonitor
       @controller.log(LOG_INFO, "(#{@nsname}): Checking #{name}, #{type.string}")
       ret = query_ignore_nxdomain(name, Types::RRSIG)
       if (ret.rcode == RCode::NXDOMAIN)
-        @controller.log(LOG_ERR, "(#{@nsname}): No records found at #{name}")
+        @controller.log(LOG_INFO, "(#{@nsname}): No records found at #{name}") # Might be an NSEC3, or might have been deleted
         return false
       end
       sig_rrsets = ret.answer.rrsets(Types::RRSIG) + ret.authority.rrsets(Types::RRSIG)
