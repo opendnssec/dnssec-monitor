@@ -757,11 +757,17 @@ module DnssecMonitor
     def check_parent_ds
       # Find the parent
       parent = get_parent_for(@zone)
-      nss = @controller.get_nameservers(parent)
       nameservers = []
-      nss.each {|nsname, nameserver|
-        nameservers.push(nameserver.to_s)
-      }
+      if (!@options.nameservers)
+        nss = @controller.get_nameservers(parent)
+        nss.each {|nsname, nameserver|
+          nameservers.push(nameserver.to_s)
+        }
+      else
+        @options.nameservers.each {|ns|
+          nameservers.push(ns)
+        }
+      end
       res = Resolver.new({:nameserver => nameservers})
       # Then look up the DS record for the child
       begin
@@ -784,7 +790,7 @@ module DnssecMonitor
         end
       end
       # Get the DNSKEYs for the target zone
-      key_response = query(@zone, Types.DNSKEY)
+      key_response = query(@zone, Types.DNSKEY, res)
       key_rrset = key_response.answer.rrset(@zone, "DNSKEY")
       # And make sure it hooks up to the zone in question
       #  Try to verify the child's DNSKEY record against the DS record
