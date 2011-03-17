@@ -50,15 +50,18 @@ module DnssecMonitor
     def initialize(options)
       @ret_val = 999
       @options = options
+      @ipv6ok = support_ipv6?
+      if (!@ipv6ok)
+        log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
+      end
+      if (@options.hints)
+        Dnssec.set_hints(@options.hints)
+      end
       @recursor = nil
       check_options
       if (!options.zone)
         log(LOG_ERR, "No zone name specified")
         exit(1)
-      end
-      @ipv6ok = support_ipv6?
-      if (!@ipv6ok)
-        log(LOG_INFO,"No IPv6 connectivity - not checking AAAA NS records")
       end
       configure_verifiers
     end
@@ -107,6 +110,7 @@ module DnssecMonitor
             new_line, type, last_name = ret
             key = RR.create(new_line)
             keys.push(key)
+            Dnssec.add_trust_anchor(key)
             log(LOG_INFO, "Loaded key from #{file} : #{key}\n")
             #            return key
           end
@@ -174,10 +178,12 @@ module DnssecMonitor
     def check_zone()
       @ret_val = 999
       nameservers = {}
+      get_recursor
       if (!@options.nameservers)
         nameservers = get_nameservers(@options.zone)
       else
         @options.nameservers.each {|ns|
+          # @TODO@ Resolve to get both IP address and name
           nameservers[ns] = ns
         }
       end
@@ -207,9 +213,11 @@ module DnssecMonitor
     def get_recursor
       if !(@recursor)
         if (@options.hints)
+          PacketSender.clear_caches
           res_hints = Resolver.new({:nameserver => @options.hints})
+#          Dnssec.default_resolver = res_hints
+          Recursor.set_hints(@options.hints, res_hints)
           @recursor = Recursor.new(res_hints)
-          Dnssec.default_resolver = res_hints
         else
           @recursor = Recursor.new
         end
@@ -513,7 +521,7 @@ module DnssecMonitor
       @controller = controller
       @controller.log(LOG_INFO, "Making resolver for : #{nameserver}, #{nsname}")
       @res = Resolver.new(nameserver.to_s)
-      @verifier = SingleVerifier.new(SingleVerifier::VerifierType::ROOT)
+      @res.do_caching = false
     end
     def check_zone()
       #      Dnssec.clear_trust_anchors
@@ -561,11 +569,16 @@ module DnssecMonitor
 
     def query_ignore_nxdomain(name, type, res = @res)
       if (!@sender)
-        @sender = PacketSender.new
+        @sender = PacketSender.new(res.single_resolvers[0].server)
       end
+      res.do_validation = true
       msg = Message.new(name, type)
+      msg.do_validation = true
+      msg.do_caching = false
       @sender.prepare_for_dnssec(msg)
-      ret, error = res.send_plain_message(msg)
+      q = Queue.new
+      res.send_async(msg, q)
+      id, ret, error = q.pop
       if (error && !(Dnsruby::NXDomain === error))
         raise error
       end
@@ -576,24 +589,24 @@ module DnssecMonitor
       # Get the keys for the zone
       @ksks = []
       @zsks = []
-      @verifier.clear_trust_anchors
-      @verifier.clear_trusted_keys
       ret = query(@zone, Types.DNSKEY)
-      ret.answer.rrsets(Types.DNSKEY).each {|rrset|
-        rrset.rrs.each {|rr|
-          if  ((rr.protocol == 3) &&  (rr.zone_key?))
-            @verifier.add_trusted_key(RRSet.new(rr))
-            #            Dnssec.add_trusted_key(RRSet.new(rr))
-            if (rr.sep_key?)
-              @controller.log(LOG_INFO,"(#{@nsname}): Adding ksk : #{rr.key_tag}")
-              @ksks.push(rr)
-            else
-              @controller.log(LOG_INFO,"(#{@nsname}): Adding zsk : #{rr.key_tag}")
-              @zsks.push(rr)
+      Dnssec.validate(ret)
+      if (ret.security_level == Dnsruby::Message::SecurityLevel::SECURE)
+        ret.answer.rrsets(Types.DNSKEY).each {|rrset|
+          rrset.rrs.each {|rr|
+            if  ((rr.protocol == 3) &&  (rr.zone_key?))
+              Dnssec.add_trust_anchor(rr)
+              if (rr.sep_key?)
+                @controller.log(LOG_INFO,"(#{@nsname}): Adding ksk : #{rr.key_tag}")
+                @ksks.push(rr)
+              else
+                @controller.log(LOG_INFO,"(#{@nsname}): Adding zsk : #{rr.key_tag}")
+                @zsks.push(rr)
+              end
             end
-          end
+          }
         }
-      }
+      end
       if (@ksks.length == 0)
         if (!@options.csk)
           @controller.log(LOG_ERR, "(#{@nsname}): No KSKs found in the zone")
@@ -623,7 +636,7 @@ module DnssecMonitor
       end
       # @TODO@ There should be no RRSIG for glue records or unsigned delegations
       begin
-        @verifier.verify_rrset(rrset, keys)
+        Dnssec.verify(rrset)
         @controller.log(LOG_INFO, "(#{@nsname}): #{rrset.name}, #{rrset.type} verified OK")
       rescue VerifyError => e
         @controller.log(LOG_ERR, "(#{@nsname}): #{rrset.name}, #{rrset.type} verification failed : #{e}, #{rrset}")
@@ -759,11 +772,12 @@ module DnssecMonitor
       # Find the parent
       parent = get_parent_for(@zone)
       nameservers = []
-        nss = @controller.get_nameservers(@zone) # parent)
-        nss.each {|nsname, nameserver|
-          nameservers.push(nameserver.to_s)
-        }
+      nss = @controller.get_nameservers(parent)
+      nss.each {|nsname, nameserver|
+        nameservers.push(nameserver.to_s)
+      }
       res = Resolver.new({:nameserver => nameservers})
+      res.do_caching = false
       # Then look up the DS record for the child
       begin
         response = res.query(@zone, "DS")
@@ -784,23 +798,16 @@ module DnssecMonitor
           end
         end
       end
-      if (@options.nameservers)
-        nameservers=[]
-        @options.nameservers.each {|ns|
-          nameservers.push(ns)
-        }
-      end
-      res = Resolver.new({:nameserver => nameservers})
       # Get the DNSKEYs for the target zone
-      key_response = query(@zone, Types.DNSKEY, res)
+      key_response = query(@zone, Types.DNSKEY) # , res)
       key_rrset = key_response.answer.rrset(@zone, "DNSKEY")
       # And make sure it hooks up to the zone in question
       #  Try to verify the child's DNSKEY record against the DS record
       begin
         if (dlv)
-          @controller.dlv_verifier.verify(key_rrset, ds_rrset)
+          @controller.dlv_verifier.verify(ds_rrset)
         else
-          @verifier.verify(key_rrset, ds_rrset)
+          Dnssec.verify(ds_rrset)
         end
       rescue VerifyError => e
         @controller.log(LOG_ERR, "Couldn't verify parent's DS record (for #{@nsname}) (#{ds_rrset.rrs.length} DS RRs found for #{@zone}) : #{e}")
@@ -812,16 +819,9 @@ module DnssecMonitor
       Dnsruby::PacketSender.clear_caches
       query = Message.new(@zone, Types.DNSKEY)
       res = @res
-      if (@options.nameservers)
-        nameservers=[]
-        @options.nameservers.each {|ns|
-          nameservers.push(ns)
-        }
-      end
-      res = Resolver.new({:nameserver => nameservers})
       msg = res.send_message(query)
       begin
-        @verifier.validate(msg, query)
+        Dnssec.validate_with_query(msg, query)
       rescue VerifyError => e
       end
       if (!@options.root_key)
@@ -914,15 +914,9 @@ module DnssecMonitor
         return false
       end
       if (ret.answer.rrsets(Types::DS).length > 0)
-        ns_addrs = []
-        ns_addrs = get_nameservers(name)
-        if (@options.nameservers)
-          @options.nameservers.each {|ns|
-            ns_addrs.push(ns)
-          }
-        end
+        ns_addrs = @controller.get_nameservers(name)
         return if !ns_addrs
-        ns_addr_strs = ns_addrs.map{|n| n.to_s}
+        ns_addr_strs = ns_addrs.keys
         # Now get the DNSKEYs for the child zone
         resolver = Dnsruby::Resolver.new({:nameservers => ns_addr_strs})
         begin
@@ -943,7 +937,7 @@ module DnssecMonitor
                 key_rrset.rrs.each {|key|
                   if (key.key_tag == ds.key_tag)
                     if (!key.sep_key? && !@options.csk)
-                      @controller.log(LOG_WARNING, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
+                      @controller.log(LOG_INFO, "(#{@nsname}): #{name} zone has non-SEP DNSKEY for DS (#{ds.key_tag})")
                     end
                   end
                 }
