@@ -706,13 +706,13 @@ module DnssecMonitor
             key_type = "ZSK"
           end
           if (days < 0)
-            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} has expired")
+            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{sig.name},#{sig.type_covered} has expired")
           end
           if (critical && (days <= critical))
-            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
+            @controller.log(LOG_ERR, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{sig.name},#{sig.type_covered} will expire in #{days} days (#{key_type.downcase}critical is #{critical})")
           end
           if (warn && (days <= warn))
-            @controller.log(LOG_WARNING, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{k.name},#{k.type} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
+            @controller.log(LOG_WARNING, "(#{@nsname}): #{key_type}(key_tag #{k.key_tag}): RRSIG for #{sig.name},#{sig.type_covered} will expire in #{days} days (#{key_type.downcase}warn is #{warn})")
           end
         end
       }
