@@ -586,9 +586,9 @@ module DnssecMonitor
       if (!@sender)
         @sender = PacketSender.new(res.single_resolvers[0].server)
       end
-      res.do_validation = true
+      res.do_validation = false
       msg = Message.new(name, type)
-      msg.do_validation = true
+      msg.do_validation = false
       msg.do_caching = false
       @sender.prepare_for_dnssec(msg)
       q = Queue.new
@@ -972,7 +972,9 @@ module DnssecMonitor
         name = name.to_s + "." + @zone.to_s
       end
       if (check_sigs(name, type))
-        check_child_ds(name)
+        if (!@options.disable_child_ds_check)
+          check_child_ds(name)
+        end
       end
     end
 

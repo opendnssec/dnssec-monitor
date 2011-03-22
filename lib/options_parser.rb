@@ -81,6 +81,7 @@ module DnssecMonitor
       options.do_validation_checks = true
       options.dlv = "dlv.isc.org."
       options.csk = false
+      options.disable_child_ds_check = false
 
       opts = OptionParser.new do |opts|
         opts.banner = "Usage: #{$0} [options]"
@@ -208,6 +209,11 @@ module DnssecMonitor
         opts.on("--csk", "Define that a Combined Signing Key is used",
           "instead of a KSK/ZSK split", "Defaults to #{options.csk}") do |on|
           options.csk = on
+        end
+
+        opts.on("--disable-child-ds-check", "Stop the system from checking",
+        "DS records are correct for children", "Defaults to #{options.disable_child_ds_check}") do |on|
+          options.disable_child_ds_check = on
         end
 
         if (support_nagios) # Running nagios_dnssec.rb
