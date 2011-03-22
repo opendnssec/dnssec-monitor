@@ -40,7 +40,11 @@ include Syslog::Constants
 require 'xsd/datatypes'
 require 'rexml/document'
 include REXML
-require 'options_parser.rb'
+begin
+  require 'options_parser.rb'
+rescue LoadError
+  require "#{File.dirname(__FILE__)}/options_parser.rb"
+end
 
 #Dnsruby::TheLog.level = Logger::DEBUG
 
@@ -100,6 +104,9 @@ module DnssecMonitor
 
     def load_keys(file)
       keys = []
+      if (!File.exist?(file))
+        file = File.dirname(__FILE__) + File::Separator + file
+      end
       if File.exist?(file)
         zone_reader = Dnsruby::ZoneReader.new(@zone.to_s)
         IO.foreach(file) { |line|
@@ -215,7 +222,7 @@ module DnssecMonitor
         if (@options.hints)
           PacketSender.clear_caches
           res_hints = Resolver.new({:nameserver => @options.hints})
-#          Dnssec.default_resolver = res_hints
+          #          Dnssec.default_resolver = res_hints
           Recursor.set_hints(@options.hints, res_hints)
           @recursor = Recursor.new(res_hints)
         else
@@ -457,12 +464,16 @@ module DnssecMonitor
     def load_namefile(options)
       name_list = nil
       # Load the namefile into the name_list
-      if (!File.exist?options.namefile)
-        @controller.log(LOG_ERR, "Name file #{options.namefile} does not exist")
+      namefile = options.namefile
+      if (!File.exist?namefile)
+        namefile = File.dirname(__FILE__) + File::Separator + namefile
+      end
+      if (!File.exist?namefile)
+        @controller.log(LOG_ERR, "Name file #{namefile} does not exist")
       else
         name_list = {}
         line_num = 0
-        IO.foreach(options.namefile) {|line|
+        IO.foreach(namefile) {|line|
           line_num += 1
           split = line.split
           name = split[0]
@@ -474,7 +485,7 @@ module DnssecMonitor
             }
             yield name, name_list[name]
           rescue Exception => e
-            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{options.namefile} : #{line}")
+            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{namefile} : #{line}")
           end
         }
       end
@@ -484,13 +495,17 @@ module DnssecMonitor
     def load_zonefile(options)
       name_list = nil
       # Load the zonefile into the name_list
-      if (!File.exist?options.zonefile)
-        @controller.log(LOG_ERR, "Zone file #{options.zonefile} does not exist")
+      zonefile = options.zonefile
+      if (!File.exist?zonefile)
+        zonefile = File.dirname(__FILE__) + File::Separator + zonefile
+      end
+      if (!File.exist?zonefile)
+        @controller.log(LOG_ERR, "Zone file #{zonefile} does not exist")
       else
         name_list = {}
         zone_reader = Dnsruby::ZoneReader.new(options.zone)
         line_num = 0
-        IO.foreach(options.zonefile) {|line|
+        IO.foreach(zonefile) {|line|
           line_num += 1
           begin
             ret = zone_reader.process_line(line)

@@ -32,7 +32,11 @@
 
 require 'syslog'
 include Syslog::Constants
-require 'options_parser.rb'
+begin
+  require 'options_parser.rb'
+rescue LoadError
+  require "#{File.dirname(__FILE__)}/options_parser.rb"
+end
 EXPIRY_MAX = 99999
 def process_log(options, output, syslog = nil)
   nagios_buffer = []
@@ -178,7 +182,13 @@ ARGV.each {|e|
 # Now fire up the dnssec_monitor in another process, catching its syslog output
 # and error return
 output = []
-  IO.popen("ruby dnssec_monitor.rb #{ARGV.join" "}") {|fhi|
+dnssec_monitor = "dnssec_monitor.rb"
+if (!File.exist?(dnssec_monitor))
+  dnssec_monitor = File.dirname(__FILE__) + File::Separator + dnssec_monitor
+end
+
+
+  IO.popen("ruby #{dnssec_monitor} #{ARGV.join" "}") {|fhi|
   while (line = fhi.gets)
     output.push(line)
   end
