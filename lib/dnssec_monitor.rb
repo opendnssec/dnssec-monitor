@@ -465,11 +465,12 @@ module DnssecMonitor
       name_list = nil
       # Load the namefile into the name_list
       namefile = options.namefile
+      oldnamefile = namefile
       if (!File.exist?namefile)
         namefile = File.dirname(__FILE__) + File::Separator + namefile
       end
       if (!File.exist?namefile)
-        @controller.log(LOG_WARNING, "Name file #{namefile} does not exist")
+        @controller.log(LOG_WARNING, "Name file #{oldnamefile} or #{namefile} does not exist")
       else
         name_list = {}
         line_num = 0
@@ -496,11 +497,12 @@ module DnssecMonitor
       name_list = nil
       # Load the zonefile into the name_list
       zonefile = options.zonefile
+      oldzonefile = zonefile
       if (!File.exist?zonefile)
         zonefile = File.dirname(__FILE__) + File::Separator + zonefile
       end
       if (!File.exist?zonefile)
-        @controller.log(LOG_WARNING, "Zone file #{zonefile} does not exist")
+        @controller.log(LOG_WARNING, "Zone file #{oldzonefile} or #{zonefile} does not exist")
       else
         name_list = {}
         zone_reader = Dnsruby::ZoneReader.new(options.zone)
