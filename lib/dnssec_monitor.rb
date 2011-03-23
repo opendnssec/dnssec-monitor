@@ -469,7 +469,7 @@ module DnssecMonitor
         namefile = File.dirname(__FILE__) + File::Separator + namefile
       end
       if (!File.exist?namefile)
-        @controller.log(LOG_ERR, "Name file #{namefile} does not exist")
+        @controller.log(LOG_WARNING, "Name file #{namefile} does not exist")
       else
         name_list = {}
         line_num = 0
@@ -485,7 +485,7 @@ module DnssecMonitor
             }
             yield name, name_list[name]
           rescue Exception => e
-            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{namefile} : #{line}")
+            @controller.log(LOG_WARNING, "Can't understand line #{line_num} of #{namefile} : #{line}")
           end
         }
       end
@@ -500,7 +500,7 @@ module DnssecMonitor
         zonefile = File.dirname(__FILE__) + File::Separator + zonefile
       end
       if (!File.exist?zonefile)
-        @controller.log(LOG_ERR, "Zone file #{zonefile} does not exist")
+        @controller.log(LOG_WARNING, "Zone file #{zonefile} does not exist")
       else
         name_list = {}
         zone_reader = Dnsruby::ZoneReader.new(options.zone)
@@ -518,8 +518,8 @@ module DnssecMonitor
             name_list[rr.name].push(rr.type)
             yield rr.name, [rr.type]
           rescue Exception => e
-            @controller.log(LOG_ERR, e)
-            @controller.log(LOG_ERR, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
+#            @controller.log(LOG_WARNING, e)
+            @controller.log(LOG_WARNING, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
           end
         }
       end
