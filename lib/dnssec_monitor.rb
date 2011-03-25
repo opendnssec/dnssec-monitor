@@ -571,7 +571,7 @@ module DnssecMonitor
         @controller.log(LOG_INFO, "Finished checking on #{@nsname}(#{@nameserver})")
       rescue ResolvTimeout => e
         @controller.log(LOG_WARNING, "Failed to check #{@nsname}(#{@nameserver}) - no response")
-      rescue OtherResolvError => e
+      rescue Exception => e
         @controller.log(LOG_WARNING, "Failed to check #{@nsname}(#{@nameserver}) : #{e}")
       end
     end
