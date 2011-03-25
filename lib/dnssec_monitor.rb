@@ -752,10 +752,16 @@ module DnssecMonitor
       end
 
       # fetch SOA from authority section
+      if (!packet.authority.rrsets(Types.SOA) ||
+          packet.authority.rrsets(Types.SOA).length == 0)
+        @controller.log(LOG_ERR, "(#{@nsname}): no SOA found for #{@zone}")
+        return
+      end
       zone = packet.authority.rrsets(Types.SOA)[0].name
 
       if (!zone)
         @controller.log(LOG_ERR, "(#{@nsname}): no SOA found NXDOMAIN authority section")
+        return
       end
 
 
