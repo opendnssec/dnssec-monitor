@@ -45,6 +45,8 @@ rescue LoadError
 end
 include Dnsruby
 
+#Dnsruby::TheLog.level = Logger::DEBUG
+
 CACHE_FILE = "/var/tmp/cache.old"
 LOCK_FILE = "/var/tmp/cache.lock"
 
@@ -181,17 +183,23 @@ def unlock
   File.delete(LOCK_FILE)
 end
 
-def send_unbound(msg, options)
+def send_unbound(msg, options, res)
   #  addr, port = options.nameserver
   s = get_unbound_command_start(options)
   s += msg + " > /dev/null 2> /dev/null"
   system s #"unbound-control -c #{options.config} #{msg}"
+  10.times {|i|
+    begin
+    res.query("thisqueryistoletunboundsortitselfout#{i}")
+    rescue Exception => e
+    end
+  }
 end
 
 def dump_cache(res, options)
   #  print "Dumping cache...\n"
   # Make sure that the resolver has a good cache - clear the cache
-  send_unbound("flush_zone .", options)
+  send_unbound("flush_zone .", options,res)
   # And perform the validating query again.
   send_query(res, options)
   # And then store the cache
@@ -246,7 +254,7 @@ errors = {}
 tests.each {|test, rrs_to_wipe|
   # First of all, make sure that the resolver cache is reset
   #  print "Flushing zone\n"
-  send_unbound("flush_zone .", options)
+  send_unbound("flush_zone .", options, res)
   #  send_unbound("load_cache #{cache}", options)
   s = get_unbound_command_start(options)
   s += "load_cache "
@@ -268,10 +276,10 @@ tests.each {|test, rrs_to_wipe|
     if (type == Types.RRSIG)
       # We want to wipe the RRSIG for a specific name and type.
       name, type = options.name_and_type_to_check
-      send_unbound("flush_type #{name} #{type.string}", options)
+      send_unbound("flush_type #{name} #{type.string}", options, res)
     else
       # Wipe the specified RR for the zone from the cache
-      send_unbound("flush_type #{options.zone} #{type.string}", options)
+      send_unbound("flush_type #{options.zone} #{type.string}", options, res)
     end
   }
   #  system "unbound-control dump_cache"
