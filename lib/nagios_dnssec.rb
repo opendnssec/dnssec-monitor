@@ -199,7 +199,7 @@ ret_val = $?.exitstatus
 nagios_ret = get_nagios_error_from_syslog(ret_val)
 if (ret_val == 1)
   print("DNSSEC CRITICAL: DNSSEC Monitor failed (#{ret_val})\n")
-  exit nagios_ret
+  exit ret_val
 end
 
 # Now go through the captured syslog output, converting it to the appropriate
