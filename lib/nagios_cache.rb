@@ -242,7 +242,7 @@ begin
 if (File.exist?("#{CACHE_FILE}"))
   File.delete("#{CACHE_FILE}")
 end
-rescue Error => e
+rescue Exception => e
   unlock
   print "CACHECHECKER CRITICAL: Can't delete cache file #{CACHE_FILE}\n"
   exit(3)
