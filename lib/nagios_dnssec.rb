@@ -157,25 +157,23 @@ end
 log_facility = nil
 delete_verbose = false
 delete_next = false
+args = []
 ARGV.each {|e|
   if (delete_next)
     log_facility = e
-    ARGV.delete(e)
     delete_next = false
-  end
-  if (delete_verbose)
+  elsif (delete_verbose)
     delete_verbose = false
-    if ((e[0,1]!="-") && (e!=options.zone.to_s))
-      ARGV.delete(e)
+    if (e.match(/^\d+$/) == nil)
+      args.push(e)
     end
-  end
-  if ((e == "-l") || (e == "--log"))
-    ARGV.delete(e)
+  elsif ((e == "-l") || (e == "--log"))
     delete_next = true
-  end
-  if ((e == "-v") || (e == "--verbose"))
-    ARGV.delete(e)
+  elsif ((e == "-v") || (e == "--verbose"))
     delete_verbose = true
+  else
+    # Add the arg
+    args.push(e)
   end
 }
 
@@ -187,12 +185,11 @@ if (!File.exist?(dnssec_monitor))
   dnssec_monitor = File.dirname(__FILE__) + File::Separator + dnssec_monitor
 end
 
-
-  IO.popen("ruby #{dnssec_monitor} #{ARGV.join" "}") {|fhi|
+IO.popen("ruby #{dnssec_monitor} #{args.join" "}") {|fhi|
   while (line = fhi.gets)
     output.push(line)
   end
-  }
+}
 ret_val = $?.exitstatus
 #print "Finished checking\n"
 # Turn the exit code into a nagios exit code
