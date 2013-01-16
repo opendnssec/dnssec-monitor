@@ -569,10 +569,10 @@ class TestMonitor < Test::Unit::TestCase
     expected_strings = []
     ["alexns.example", "alexdns.example"].each {|ns|
       4.times { |x|
-        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com.	2678400	IN	DNSKEY	256 3 RSASHA1-NSEC3-SHA1 ( AwEAAfFF869A/FiM1z8LZdK1pEfMgQhp1Pzeg+jUAJiQECDkJwfoCOKbyZZ/n1KtUM8WdtTho6mPI99tKN9UctVh6XyuuklA6M2F2vgj7zB0zv1VeQNwx8kaSZmxhnV4L7XzVUZK9BLfLwj9XlSBSpPWfElN2Ih6bd8RENA0vfQsZ9vp ) ; key_tag=7877 will expire in 0.07")
-        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com.	2678400	IN	DNSKEY	256 3 RSASHA1-NSEC3-SHA1 ( AwEAAfFF869A/FiM1z8LZdK1pEfMgQhp1Pzeg+jUAJiQECDkJwfoCOKbyZZ/n1KtUM8WdtTho6mPI99tKN9UctVh6XyuuklA6M2F2vgj7zB0zv1VeQNwx8kaSZmxhnV4L7XzVUZK9BLfLwj9XlSBSpPWfElN2Ih6bd8RENA0vfQsZ9vp ) ; key_tag=7877 will expire in 0.07")
-        expected_strings.push("3 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com.	2678400	IN	DNSKEY	257 3 RSASHA1-NSEC3-SHA1 ( AwEAAclPAcnkTHj2XSQfe/A3l15IOwr9+cfy5BxE8fVt2sSipf/Q1noqGAEBJ/2FLM8o3TGdVPOvcWhpHnTqoZwTwKhoA040CvielB/6rOwfZalQUaAijQZ48W3q6O/3tugHTzzgmpN0gsblwJZWe3k8zr/Z5W13TUFFgNRgZr8Y/8AqTOIctZY0l5yUgoWFvx7UQf+RR87xebgIAFHTE3VDHsZzdge6hKoMfQxI9tlc2ezDyIZpojti1B18LiPuIp3FPPFaK76cTmAtqo0pqwpq/z0ZUmjnvH8pXRafPM734CHbry7NBpJO3R7Jxg5r0SR+wN7/kmZ2uWLS9I8U/mJpgg0= ) ; key_tag=18931 will expire in 0.07")
-        expected_strings.push("4 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com.	2678400	IN	DNSKEY	257 3 RSASHA1-NSEC3-SHA1 ( AwEAAclPAcnkTHj2XSQfe/A3l15IOwr9+cfy5BxE8fVt2sSipf/Q1noqGAEBJ/2FLM8o3TGdVPOvcWhpHnTqoZwTwKhoA040CvielB/6rOwfZalQUaAijQZ48W3q6O/3tugHTzzgmpN0gsblwJZWe3k8zr/Z5W13TUFFgNRgZr8Y/8AqTOIctZY0l5yUgoWFvx7UQf+RR87xebgIAFHTE3VDHsZzdge6hKoMfQxI9tlc2ezDyIZpojti1B18LiPuIp3FPPFaK76cTmAtqo0pqwpq/z0ZUmjnvH8pXRafPM734CHbry7NBpJO3R7Jxg5r0SR+wN7/kmZ2uWLS9I8U/mJpgg0= ) ; key_tag=18931 will expire in 0.07")
+#        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,DNSKEY will expire in 0.07")
+#        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,DNSKEY will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com,DNSKEY will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): KSK(key_tag 18931): RRSIG for example.com,DNSKEY will expire in 0.07")
         expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, SOA will expire in 0.07")
         expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, SOA will expire in 0.07")
         expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, DNSKEY will expire in 0.07")
@@ -585,6 +585,10 @@ class TestMonitor < Test::Unit::TestCase
         expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, A will expire in 0.07")
         expected_strings.push("3 : (#{ns}): RRSIG for alex.example.com, TXT will expire in 0.07")
         expected_strings.push("4 : (#{ns}): RRSIG for alex.example.com, TXT will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for alex.example.com,A will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for alex.example.com,A will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for alex.example.com,TXT will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for alex.example.com,TXT will expire in 0.07")
 
         expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, SOA will expire in 0.07")
         expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, SOA will expire in 0.07")
@@ -598,6 +602,20 @@ class TestMonitor < Test::Unit::TestCase
         expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, A will expire in 0.07")
         expected_strings.push("3 : (#{ns}): RRSIG for alexd.example.com, TXT will expire in 0.07")
         expected_strings.push("4 : (#{ns}): RRSIG for alexd.example.com, TXT will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for alexd.example.com,A will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for alexd.example.com,A will expire in 0.07")
+
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for rvca2mmkga1vns9sldb3v5j5t7hjabc1.example.com,NSEC3 will expire in 0.07");
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for rvca2mmkga1vns9sldb3v5j5t7hjabc1.example.com,NSEC3 will expire in 0.07");
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for m72g2t8v17dad1dmt846q710mjj6aftj.example.com,NSEC3 will expire in 0.07");
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for m72g2t8v17dad1dmt846q710mjj6aftj.example.com,NSEC3 will expire in 0.07");
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for 2m2a94tqcccofp1p60sn5hsvt7qf2o60.example.com,NSEC3 will expire in 0.07");
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for 2m2a94tqcccofp1p60sn5hsvt7qf2o60.example.com,NSEC3 will expire in 0.07");
+
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,SOA will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,SOA will expire in 0.07")
+        expected_strings.push("3 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,NSEC3PARAM will expire in 0.07")
+        expected_strings.push("4 : (#{ns}): ZSK(key_tag 7877): RRSIG for example.com,NSEC3PARAM will expire in 0.07")
       }
     }
     time = Time.gm(2009, 12, 02, 8, 0, 0)
