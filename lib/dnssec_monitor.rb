@@ -1005,6 +1005,14 @@ module DnssecMonitor
           check_sig_validity(name, sig)
         }
       }
+      ret.answer.rrsets(type).each {|rrset|
+        next if rrset.type == Types::RRSIG
+        if (@options.csk)
+          verify_rrset(rrset, @zsks)
+        else
+          verify_rrset(rrset, @ksks)
+        end
+      }
     end
 
     def check_sig_inception(name, sig)
