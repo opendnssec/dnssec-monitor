@@ -989,7 +989,7 @@ module DnssecMonitor
     # Check the RRSIG expiry, etc. for a specific domain
     def check_sigs(name, type)
       @controller.log(LOG_INFO, "(#{@nsname}): Checking #{name}, #{type.string}")
-      ret = query_ignore_nxdomain(name, Types::RRSIG)
+      ret = query_ignore_nxdomain(name, type)
       if (ret.rcode == RCode::NXDOMAIN)
         @controller.log(LOG_INFO, "(#{@nsname}): No records found at #{name}") # Might be an NSEC3, or might have been deleted
         return false
@@ -1008,7 +1008,7 @@ module DnssecMonitor
 
 
       return if type == Types::RRSIG
-      ret = query_ignore_nxdomain(name, type)
+#      ret = query_ignore_nxdomain(name, type)
       begin
         if (@options.csk)
           Dnssec.verify(ret, @zsks)
