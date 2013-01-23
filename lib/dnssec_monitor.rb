@@ -520,7 +520,7 @@ module DnssecMonitor
             name_list[rr.name].push(rr.type)
             yield rr.name, [rr.type]
           rescue Exception => e
-#            @controller.log(LOG_WARNING, e)
+            #            @controller.log(LOG_WARNING, e)
             @controller.log(LOG_WARNING, "Can't understand line #{line_num} of #{options.zonefile} : #{line}")
           end
         }
@@ -753,7 +753,7 @@ module DnssecMonitor
 
       # fetch SOA from authority section
       if (!packet.authority.rrsets(Types.SOA) ||
-          packet.authority.rrsets(Types.SOA).length == 0)
+            packet.authority.rrsets(Types.SOA).length == 0)
         @controller.log(LOG_ERR, "(#{@nsname}): no SOA found for #{@zone}")
         return
       end
@@ -1005,14 +1005,20 @@ module DnssecMonitor
           check_sig_validity(name, sig)
         }
       }
-      ret.answer.rrsets(type).each {|rrset|
-        next if rrset.type == Types::RRSIG
+
+
+      return if type == Types::RRSIG
+      ret = query_ignore_nxdomain(name, type)
+      begin
         if (@options.csk)
-          verify_rrset(rrset, @zsks)
+          Dnssec.verify(ret, @zsks)
         else
-          verify_rrset(rrset, @ksks)
+          Dnssec.verify(ret, @ksks)
         end
-      }
+        @controller.log(LOG_INFO, "(#{@nsname}): #{name}, #{type} verified OK")
+      rescue VerifyError => e
+        @controller.log(LOG_ERR, "(#{@nsname}): #{name}, #{type} verification failed : #{e}, #{ret}")
+      end
     end
 
     def check_sig_inception(name, sig)
