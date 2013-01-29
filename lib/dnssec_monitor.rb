@@ -1008,14 +1008,16 @@ module DnssecMonitor
 
 
       return if type == Types::RRSIG
-#      ret = query_ignore_nxdomain(name, type)
+      #      ret = query_ignore_nxdomain(name, type)
       begin
-        if (@options.csk)
-          Dnssec.verify(ret, @zsks)
-        else
-          Dnssec.verify(ret, @ksks)
+        if (ret.answer.rrsets(type).length > 0)
+          if (@options.csk)
+            Dnssec.verify_rrset(ret.answer.rrsets(type)[0], @zsks)
+          else
+            Dnssec.verify_rrset(ret.answer.rrsets(type)[0], @ksks)
+          end
+          @controller.log(LOG_INFO, "(#{@nsname}): #{name}, #{type} verified OK")
         end
-        @controller.log(LOG_INFO, "(#{@nsname}): #{name}, #{type} verified OK")
       rescue VerifyError => e
         @controller.log(LOG_ERR, "(#{@nsname}): #{name}, #{type} verification failed : #{e}, #{ret}")
       end
