@@ -694,7 +694,7 @@ module DnssecMonitor
       # PowerDNS is answering with NOTIMP if aksing for Types.RRSIG, but
       # we could ask for Types.SOA and this is working anywhere.
       # See also: https://github.com/PowerDNS/pdns/issues/1426
-      ret = query(@zone, Types.RRSIG)
+      ret = query(@zone, Types.SOA)
       ret.answer.rrsets(Types.RRSIG).each {|sigs|
         sigs.each {|sig|
           check_expire_zsk(sig)
