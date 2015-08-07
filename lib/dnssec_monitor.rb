@@ -691,7 +691,10 @@ module DnssecMonitor
 
     def check_apex_rrsigs
       # Get the RRSIG records for the zone apex and check their expiry
-      ret = query(@zone, Types.RRSIG)
+      # PowerDNS is answering with NOTIMP if aksing for Types.RRSIG, but
+      # we could ask for Types.SOA and this is working anywhere.
+      # See also: https://github.com/PowerDNS/pdns/issues/1426
+      ret = query(@zone, Types.SOA)
       ret.answer.rrsets(Types.RRSIG).each {|sigs|
         sigs.each {|sig|
           check_expire_zsk(sig)
@@ -974,8 +977,9 @@ module DnssecMonitor
     end
 
     def check_domain(name, type = nil)
-      # Check RRSIG if type is nil
-      type = Types.RRSIG if !type
+      # see also: https://github.com/PowerDNS/pdns/issues/1426
+      # Check SOA if type is nil
+      type = Types.SOA if !type
       if (!Name.create(name).absolute?)
         name = name.to_s + "." + @zone.to_s
       end
