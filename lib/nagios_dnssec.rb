@@ -88,11 +88,11 @@ def process_log(options, output, syslog = nil)
   end
   case options.nagios_verbosity
   when 0..1
-    nagios_buffer = [worst_nagios_output].to_s.chomp
+    nagios_buffer = [worst_nagios_output]
     if (num_worst_errors > 1)
-      nagios_buffer += " : #{num_worst_errors - 1} other issues at this level - run with -v 3 for details"
+      nagios_buffer.push" : #{num_worst_errors - 1} other issues at this level - run with -v 3 for details"
     end
-    nagios_buffer += "\n"
+    nagios_buffer.push"\n"
   when 2
     if (nagios_buffer.length == 0)
       nagios_buffer = [nagios_message]
