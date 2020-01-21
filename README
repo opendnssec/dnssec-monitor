@@ -13,6 +13,10 @@ INSTALLATION
 The tools can be run from the lib folder, or the contents of 
 the lib folder can be copied to the location of your choice.
 
+Works with dnsruby up to version 1.60.0, later versions of dnsruby
+brake this tools. It's documented in a dnsruby github issue:
+https://github.com/alexdalitz/dnsruby/issues/150
+
 It may be necessary to :
 
   chmod +x dnssec_monitor.rb
